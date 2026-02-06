@@ -723,6 +723,9 @@ function initCheckout() {
             return;
         }
 
+        if (btnCalcFreight) {
+            btnCalcFreight.classList.add('hidden');
+        }
         clearShippingSelection();
         if (btnCalcFreight) {
             btnCalcFreight.disabled = true;
@@ -774,6 +777,7 @@ function initCheckout() {
                 updateFreightAddress(updatedAddress);
                 setHidden(freightDetails, false);
                 setHidden(summaryBlock, true);
+                if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
                 setHidden(freightForm, false);
                 hydrateExtraAddress();
                 bindExtraAddress();
@@ -800,6 +804,7 @@ function initCheckout() {
                     showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
                     setHidden(freightLoading, true);
                     if (btnCalcFreight) {
+                        btnCalcFreight.classList.remove('hidden');
                         btnCalcFreight.disabled = false;
                     }
                 }, remaining);
