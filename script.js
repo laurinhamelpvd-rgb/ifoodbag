@@ -88,13 +88,6 @@
     }
 };
 
-const winners = [
-    'Carlos M. - SP - Resgatou há 2 min',
-    'Ana P. - RJ - Resgatou há 5 min',
-    'Roberto S. - MG - Resgatou há 12 min',
-    'Felipe K. - RS - Resgatou há 15 min'
-];
-
 const STORAGE_KEYS = {
     personal: 'ifoodbag.personal',
     address: 'ifoodbag.address',
@@ -114,7 +107,6 @@ const state = {
     totalSteps: 0,
     answerLocked: false,
     timerId: null,
-    tickerId: null,
     toastTimeout: null
 };
 
@@ -515,7 +507,6 @@ function initSuccess() {
     const personal = loadPersonal();
     const leadName = document.getElementById('lead-name');
     const timer = document.getElementById('timer');
-    const ticker = document.getElementById('ticker');
     const btnCheckout = document.getElementById('btn-checkout');
 
     if (leadName && personal?.name) {
@@ -524,7 +515,6 @@ function initSuccess() {
     }
 
     startTimer(300, timer);
-    startTicker(ticker);
 
     btnCheckout?.addEventListener('click', () => {
         setStage('checkout');
@@ -1472,23 +1462,6 @@ function startTimer(duration, display) {
             timer -= 1;
         }
     }, 1000);
-}
-
-function startTicker(container) {
-    if (!container) return;
-    if (state.tickerId) clearInterval(state.tickerId);
-
-    let idx = 0;
-    container.innerText = winners[0];
-
-    state.tickerId = setInterval(() => {
-        idx = (idx + 1) % winners.length;
-        container.style.opacity = 0;
-        setTimeout(() => {
-            container.innerText = winners[idx];
-            container.style.opacity = 1;
-        }, 500);
-    }, 4000);
 }
 
 function showToast(message, type = 'info') {

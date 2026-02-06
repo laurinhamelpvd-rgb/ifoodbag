@@ -565,29 +565,6 @@ p {
     margin-bottom: 22px;
 }
 
-/* Ticker */
-.reviews-ticker-container {
-    margin-top: 32px;
-    border-top: 1px solid #EAEAEA;
-    padding-top: 20px;
-    width: 100%;
-}
-
-.ticker-title {
-    font-size: 0.7rem;
-    color: #b5b5b5;
-    text-transform: uppercase;
-    font-weight: 700;
-    margin-bottom: 8px;
-    letter-spacing: 0.5px;
-}
-
-.reviews-ticker {
-    color: #555;
-    font-size: 0.9rem;
-    font-style: italic;
-}
-
 .shipping-note {
     margin-top: 16px;
     font-size: 0.85rem;
