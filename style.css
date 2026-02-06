@@ -27,7 +27,9 @@
 }
 
 html {
-    background-color: var(--primary-color);
+    background-color: #ffffff;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
 }
 
 button,
@@ -61,7 +63,9 @@ body {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     -webkit-text-size-adjust: 100%;
-    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+    max-width: 100%;
 }
 
 .hidden {
