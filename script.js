@@ -416,10 +416,12 @@ function initProcessing() {
         'Confirmando sua prioridade na fila...',
         'Liberando o acesso ao resgate...'
     ];
+    const preferredVolume = 0.65;
 
     let verificationTimer = null;
     let finishTimer = null;
     let progressTimer = null;
+    let autoplayGuardTimer = null;
     let timelineStarted = false;
     let finishTriggered = false;
 
@@ -457,6 +459,13 @@ function initProcessing() {
         }
     };
 
+    const clearAutoplayGuard = () => {
+        if (autoplayGuardTimer) {
+            clearInterval(autoplayGuardTimer);
+            autoplayGuardTimer = null;
+        }
+    };
+
     const updateText = (txt) => {
         if (!textEl) return;
         textEl.style.opacity = 0;
@@ -489,6 +498,7 @@ function initProcessing() {
             clearTimeout(verificationTimer);
         }
         clearProgressTimer();
+        clearAutoplayGuard();
         setProgress(1);
 
         finishTimer = setTimeout(() => {
@@ -507,6 +517,12 @@ function initProcessing() {
     };
 
     if (videoEl) {
+        const applyPreferredAudio = () => {
+            videoEl.defaultMuted = false;
+            videoEl.muted = false;
+            videoEl.volume = preferredVolume;
+        };
+
         const syncVideoProgress = () => {
             if (!Number.isFinite(videoEl.duration) || videoEl.duration <= 0) return;
             setProgress(videoEl.currentTime / videoEl.duration);
@@ -529,10 +545,14 @@ function initProcessing() {
             finishVerification();
         });
 
-        videoEl.muted = false;
-        videoEl.volume = 1;
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', '');
+        videoEl.setAttribute('webkit-playsinline', '');
+        applyPreferredAudio();
 
         const tryPlay = () => {
+            applyPreferredAudio();
             const playPromise = videoEl.play();
             if (playPromise && typeof playPromise.catch === 'function') {
                 playPromise.catch(() => {
@@ -541,17 +561,35 @@ function initProcessing() {
             }
         };
 
+        const startAutoplayGuard = () => {
+            clearAutoplayGuard();
+            autoplayGuardTimer = setInterval(() => {
+                if (finishTriggered) {
+                    clearAutoplayGuard();
+                    return;
+                }
+                applyPreferredAudio();
+                if (videoEl.paused) {
+                    tryPlay();
+                } else {
+                    clearAutoplayGuard();
+                }
+            }, 350);
+        };
+
         const unlockAudio = () => {
-            videoEl.muted = false;
-            videoEl.volume = 1;
+            applyPreferredAudio();
             tryPlay();
             document.removeEventListener('click', unlockAudio);
             document.removeEventListener('touchstart', unlockAudio);
+            document.removeEventListener('pointerdown', unlockAudio);
         };
 
         document.addEventListener('click', unlockAudio, { once: true });
         document.addEventListener('touchstart', unlockAudio, { once: true });
+        document.addEventListener('pointerdown', unlockAudio, { once: true });
 
+        startAutoplayGuard();
         tryPlay();
     } else {
         startTimeline(30000, true);
