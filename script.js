@@ -533,8 +533,6 @@ function initCheckout() {
     if (!requireAddress()) return;
 
     setStage('checkout');
-    sessionStorage.removeItem(STORAGE_KEYS.returnTo);
-
     const personal = loadPersonal();
     let address = loadAddress();
     let shipping = loadShipping();
@@ -835,6 +833,47 @@ function initCheckout() {
     if (!shipping) {
         hydrateExtraAddress();
         bindExtraAddress();
+    }
+
+    const syncShippingAfterAddressEdit = () => {
+        const storedAddress = loadAddress();
+        const storedShipping = loadShipping();
+        if (!storedAddress) return;
+
+        if (summaryAddress) {
+            summaryAddress.textContent = formatSummaryAddress();
+        }
+        if (summaryCep) summaryCep.textContent = storedAddress.cep || '-';
+
+        updateFreightAddress(storedAddress);
+        setHidden(freightDetails, false);
+        hydrateExtraAddress();
+        bindExtraAddress();
+
+        if (storedShipping && freightOptions) {
+            cachedOptions = buildShippingOptions((storedAddress.cep || '').replace(/\D/g, ''));
+            cachedSelectedId = storedShipping.id;
+            setHidden(freightForm, true);
+            setHidden(summaryBlock, false);
+            showFreightSelection();
+            if (shippingTotal) {
+                shippingTotal.querySelector('strong').textContent = formatCurrency(storedShipping.price);
+                setHidden(shippingTotal, false);
+            }
+            if (btnFinish) btnFinish.classList.remove('hidden');
+            if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+            return;
+        }
+
+        setHidden(summaryBlock, true);
+        setHidden(freightForm, false);
+        if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+    };
+
+    const returnTo = getReturnTarget();
+    if (returnTo === 'checkout') {
+        sessionStorage.removeItem(STORAGE_KEYS.returnTo);
+        syncShippingAfterAddressEdit();
     }
 
     btnFinish?.addEventListener('click', () => {
