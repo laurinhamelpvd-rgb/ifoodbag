@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { upsertLead } = require('./lib/lead-store');
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -171,6 +172,14 @@ app.post('/api/pix/create', async (req, res) => {
             });
         }
 
+        upsertLead({
+            ...(req.body || {}),
+            event: 'pix_created',
+            stage: 'pix',
+            pixTxid: data.idTransaction || data.idtransaction || '',
+            pixAmount: Number(value.toFixed(2))
+        }, req).catch(() => null);
+
         return res.json({
             idTransaction: data.idTransaction || data.idtransaction,
             paymentCode: data.paymentCode || data.paymentcode,
@@ -183,6 +192,21 @@ app.post('/api/pix/create', async (req, res) => {
             error: 'Erro ao gerar o PIX.',
             detail: error.message || String(error)
         });
+    }
+});
+
+app.post('/api/lead/track', async (req, res) => {
+    try {
+        const result = await upsertLead(req.body || {}, req);
+        if (!result.ok && result.reason === 'missing_supabase_config') {
+            return res.status(202).json({ ok: false, reason: result.reason });
+        }
+        if (!result.ok) {
+            return res.status(502).json({ ok: false, reason: result.reason, detail: result.detail || '' });
+        }
+        return res.json({ ok: true });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message || String(error) });
     }
 });
 

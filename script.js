@@ -98,7 +98,8 @@ const STORAGE_KEYS = {
     shipping: 'ifoodbag.shipping',
     addressExtra: 'ifoodbag.addressExtra',
     pix: 'ifoodbag.pix',
-    bump: 'ifoodbag.bump'
+    bump: 'ifoodbag.bump',
+    leadSession: 'ifoodbag.leadSession'
 };
 
 const state = {
@@ -158,8 +159,10 @@ function cacheCommonDom() {
 
 function initHome() {
     const btnStart = document.getElementById('btn-start');
+    trackLead('landing_view', { stage: getStage() || 'home' });
 
     btnStart?.addEventListener('click', () => {
+        trackLead('quiz_start_click', { stage: 'home' });
         resetFlow();
         setStage('quiz');
         redirect('quiz.html');
@@ -178,6 +181,7 @@ function initQuiz() {
     const progressFill = document.getElementById('progress-fill');
 
     if (!questionText || !optionsContainer || !questionCount || !progressFill) return;
+    trackLead('quiz_view', { stage: 'quiz' });
 
     state.currentQuestionKey = 'start';
     state.currentStepIndex = 1;
@@ -194,6 +198,7 @@ function initQuiz() {
 
 function initPersonal() {
     setStage('personal');
+    trackLead('personal_view', { stage: 'personal' });
     const returnTo = getReturnTarget();
 
     const form = document.getElementById('personal-form');
@@ -260,6 +265,10 @@ function initPersonal() {
             phone: phoneValue,
             phoneDigits: phoneValue.replace(/\D/g, '')
         });
+        trackLead('personal_submitted', {
+            stage: 'personal',
+            personal: loadPersonal()
+        });
 
         if (returnTo === 'checkout' && loadAddress()) {
             sessionStorage.removeItem(STORAGE_KEYS.returnTo);
@@ -278,6 +287,7 @@ function initPersonal() {
 function initCep() {
     if (!requirePersonal()) return;
     setStage('cep');
+    trackLead('cep_view', { stage: 'cep' });
     const returnTo = getReturnTarget();
 
     const cepInput = document.getElementById('cep-input');
@@ -346,6 +356,10 @@ function initCep() {
                 city,
                 state: stateUf
             });
+            trackLead('cep_confirmed', {
+                stage: 'cep',
+                address: loadAddress()
+            });
 
             const elapsed = Date.now() - startTime;
             const remaining = Math.max(0, minDelayMs - elapsed);
@@ -394,6 +408,7 @@ function initProcessing() {
     if (!requireAddress()) return;
 
     setStage('processing');
+    trackLead('processing_view', { stage: 'processing' });
 
     const textEl = document.getElementById('processing-text');
     const videoEl = document.getElementById('vsl-video');
@@ -503,6 +518,7 @@ function initSuccess() {
     if (!requireAddress()) return;
 
     setStage('success');
+    trackLead('success_view', { stage: 'success' });
 
     const personal = loadPersonal();
     const leadName = document.getElementById('lead-name');
@@ -527,6 +543,7 @@ function initCheckout() {
     if (!requireAddress()) return;
 
     setStage('checkout');
+    trackLead('checkout_view', { stage: 'checkout' });
     const personal = loadPersonal();
     let address = loadAddress();
     let shipping = loadShipping();
@@ -962,6 +979,7 @@ function initOrderBump() {
     }
 
     setStage('orderbump');
+    trackLead('orderbump_view', { stage: 'orderbump' });
     const bumpPrice = 9.9;
 
     const btnAccept = document.getElementById('btn-bump-accept');
@@ -983,6 +1001,11 @@ function initOrderBump() {
             price: bumpPrice,
             title: 'Seguro Bag'
         });
+        trackLead(selected ? 'orderbump_accepted' : 'orderbump_declined', {
+            stage: 'orderbump',
+            bump: loadBump(),
+            shipping
+        });
 
         createPixCharge(shipping, selected ? bumpPrice : 0)
             .catch((error) => {
@@ -998,6 +1021,7 @@ function initOrderBump() {
 }
 
 function initPix() {
+    trackLead('pix_view', { stage: 'pix' });
     const pix = loadPix();
     const pixQr = document.getElementById('pix-qr');
     const pixCode = document.getElementById('pix-code');
@@ -1129,6 +1153,7 @@ function handleAnswer(btnElement, option, refs) {
     setTimeout(() => {
         if (option.next === 'personal_step') {
             saveQuizComplete();
+            trackLead('quiz_completed', { stage: 'quiz' });
             setStage('personal');
             redirect('dados.html');
             return;
@@ -1368,7 +1393,11 @@ async function createPixCharge(shipping, bumpPrice) {
     const extraCharge = Number(bumpPrice || 0);
     const amount = Number((shipping.price + extraCharge).toFixed(2));
     const payload = {
+        sessionId: getLeadSessionId(),
         amount,
+        stage: 'pix',
+        event: 'pix_create_requested',
+        sourceUrl: window.location.href,
         shipping,
         bump: extraCharge > 0 ? { title: 'Seguro Bag', price: extraCharge } : null,
         personal: loadPersonal(),
@@ -1384,6 +1413,12 @@ async function createPixCharge(shipping, bumpPrice) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         const message = data?.error || 'Não foi possível gerar o pagamento PIX.';
+        trackLead('pix_create_failed', {
+            stage: 'orderbump',
+            shipping,
+            bump: payload.bump,
+            amount
+        });
         throw new Error(message);
     }
     savePix({
@@ -1395,6 +1430,13 @@ async function createPixCharge(shipping, bumpPrice) {
         createdAt: Date.now()
     });
     setStage('pix');
+    trackLead('pix_created_front', {
+        stage: 'pix',
+        shipping,
+        bump: payload.bump,
+        pix: data,
+        amount
+    });
     redirect('pix.html');
 }
 
@@ -1408,6 +1450,48 @@ function loadPix() {
         return raw ? JSON.parse(raw) : null;
     } catch (error) {
         return null;
+    }
+}
+
+function getLeadSessionId() {
+    let sessionId = localStorage.getItem(STORAGE_KEYS.leadSession) || '';
+    if (sessionId) return sessionId;
+
+    sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(STORAGE_KEYS.leadSession, sessionId);
+    return sessionId;
+}
+
+function trackLead(eventName, extra = {}) {
+    const payload = {
+        sessionId: getLeadSessionId(),
+        event: eventName,
+        stage: extra.stage || getStage() || '',
+        sourceUrl: window.location.href,
+        personal: extra.personal || loadPersonal() || {},
+        address: extra.address || loadAddress() || {},
+        extra: extra.extra || loadAddressExtra() || {},
+        shipping: extra.shipping || loadShipping() || {},
+        bump: extra.bump || loadBump() || {},
+        pix: extra.pix || loadPix() || {},
+        amount: Number.isFinite(Number(extra.amount)) ? Number(extra.amount) : undefined
+    };
+
+    try {
+        const body = JSON.stringify(payload);
+        if (navigator.sendBeacon) {
+            const blob = new Blob([body], { type: 'application/json' });
+            navigator.sendBeacon('/api/lead/track', blob);
+            return;
+        }
+        fetch('/api/lead/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true
+        }).catch(() => null);
+    } catch (_error) {
+        // Tracking must never break the main flow.
     }
 }
 
@@ -1535,6 +1619,7 @@ function resetFlow() {
     localStorage.removeItem(STORAGE_KEYS.addressExtra);
     localStorage.removeItem(STORAGE_KEYS.pix);
     localStorage.removeItem(STORAGE_KEYS.bump);
+    localStorage.removeItem(STORAGE_KEYS.leadSession);
     sessionStorage.removeItem(STORAGE_KEYS.stock);
     sessionStorage.removeItem(STORAGE_KEYS.returnTo);
 }

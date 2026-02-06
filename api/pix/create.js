@@ -8,6 +8,7 @@ const {
     getSellerId,
     resolvePostbackUrl
 } = require('../../lib/ativus');
+const { upsertLead } = require('../../lib/lead-store');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -19,21 +20,21 @@ module.exports = async (req, res) => {
 
     try {
         if (!API_KEY_B64) {
-            return res.status(500).json({ error: 'API Key não configurada.' });
+            return res.status(500).json({ error: 'API key not configured.' });
         }
 
         let rawBody = {};
         try {
             rawBody = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
         } catch (error) {
-            return res.status(400).json({ error: 'JSON inválido no corpo da requisição.' });
+            return res.status(400).json({ error: 'Invalid JSON body.' });
         }
 
         const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump } = rawBody;
         const value = Number(amount);
 
         if (!value || value <= 0) {
-            return res.status(400).json({ error: 'Valor do frete inválido.' });
+            return res.status(400).json({ error: 'Invalid shipping amount.' });
         }
 
         const name = String(personal.name || '').trim();
@@ -42,7 +43,7 @@ module.exports = async (req, res) => {
         const phone = sanitizeDigits(personal.phoneDigits || personal.phone || '');
 
         if (!name || !cpf || !email || !phone) {
-            return res.status(400).json({ error: 'Dados pessoais incompletos.' });
+            return res.status(400).json({ error: 'Personal data is incomplete.' });
         }
 
         const street = String(address.street || '').trim() || String(address.streetLine || '').split(',')[0]?.trim() || '';
@@ -125,10 +126,19 @@ module.exports = async (req, res) => {
 
         if (!response.ok) {
             return res.status(response.status).json({
-                error: 'Falha ao gerar o PIX.',
+                error: 'Failed to generate PIX.',
                 detail: data
             });
         }
+
+        // Do not block checkout flow on database write.
+        upsertLead({
+            ...(rawBody || {}),
+            event: 'pix_created',
+            stage: 'pix',
+            pixTxid: data.idTransaction || data.idtransaction || '',
+            pixAmount: totalAmount
+        }, req).catch(() => null);
 
         return res.status(200).json({
             idTransaction: data.idTransaction || data.idtransaction,
@@ -139,7 +149,7 @@ module.exports = async (req, res) => {
         });
     } catch (error) {
         return res.status(500).json({
-            error: 'Erro ao gerar o PIX.',
+            error: 'Error generating PIX.',
             detail: error.message || String(error)
         });
     }
