@@ -714,11 +714,12 @@ p {
     width: 100%;
     display: flex;
     justify-content: center;
-    margin-bottom: 12px;
+    margin: 0 -10px 12px;
 }
 
 .bump-hero img {
-    width: min(560px, 98vw);
+    width: 100%;
+    max-width: none;
     height: auto;
     object-fit: contain;
 }
@@ -780,6 +781,10 @@ p {
 
 body[data-page='orderbump'] .footer {
     margin-top: 20px;
+}
+
+body[data-page='orderbump'] .step {
+    padding: clamp(16px, 3.6vw, 28px) 10px;
 }
 
 .verified-icon {
