@@ -287,9 +287,10 @@ p {
     gap: 10px;
 }
 
- .trust-strip--cards {
-    gap: 12px;
- }
+.trust-strip--cards {
+    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 
 @media (min-width: 480px) {
     .trust-strip {
@@ -337,18 +338,22 @@ p {
 }
 
 .trust-icon-img {
-    width: 60px;
+    width: 54px;
     height: auto;
     display: block;
 }
 
 @media (max-width: 479px) {
     .trust-card {
-        padding: 14px 12px;
-        min-height: 100px;
+        padding: 10px 6px 12px;
+        min-height: 92px;
     }
     .trust-icon-img {
-        width: 56px;
+        width: 44px;
+    }
+    .trust-card span {
+        font-size: 0.78rem;
+        line-height: 1.1;
     }
 }
 
