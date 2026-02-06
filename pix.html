@@ -18,49 +18,91 @@
 <body data-page="pix">
     
 
-    <header class="header">
-        <div class="logo-container">
-            <img src="assets/ifoodentregadores.png" alt="iFood Entregador" class="ifood-logo ifood-logo--wide">
-        </div>
-    </header>
-
     <noscript class="no-js">Para continuar, ative o JavaScript no navegador.</noscript>
 
     <main class="container">
-        <section class="step" aria-hidden="false">
-            <div class="step-header">
-                <span class="step-count">Pagamento</span>
-                <div class="progress-bar">
-                    <div class="progress" style="width: 100%"></div>
-                </div>
+        <section class="step pix-page" aria-hidden="false">
+            <div class="pix-topbar">
+                <a href="checkout.html" class="pix-back" aria-label="Voltar">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                        <path d="M15.5 19.5 8 12l7.5-7.5 1.5 1.5L11 12l6 6-1.5 1.5Z"></path>
+                    </svg>
+                </a>
+                <div class="pix-topbar__title">Pagamento</div>
+                <a href="checkout.html" class="pix-help">Ajuda</a>
             </div>
 
-            <h2>Pagamento do Frete via PIX</h2>
-            <p>Escaneie o QR code ou copie o código abaixo para concluir.</p>
+            <div class="pix-hero">
+                <svg viewBox="0 0 240 200" role="img" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="pixHand" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#f6c7cf" />
+                            <stop offset="100%" stop-color="#f07a8e" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="120" cy="90" r="70" fill="#fde3e7"></circle>
+                    <rect x="98" y="32" width="44" height="88" rx="16" fill="#111"></rect>
+                    <rect x="104" y="40" width="32" height="70" rx="10" fill="#fff"></rect>
+                    <circle cx="120" cy="72" r="14" fill="#00c853"></circle>
+                    <path d="M118 78l-6-6 2-2 4 4 8-8 2 2-10 10z" fill="#fff"></path>
+                    <path
+                        d="M64 130c10-18 24-30 44-36l16 18-12 24-24 10-24-16z"
+                        fill="url(#pixHand)"></path>
+                    <path
+                        d="M168 130c-10-18-24-30-44-36l-16 18 12 24 24 10 24-16z"
+                        fill="url(#pixHand)"></path>
+                    <circle cx="180" cy="72" r="14" fill="none" stroke="#EA1D2C" stroke-width="4"></circle>
+                    <path d="M180 56v12l8 8" stroke="#EA1D2C" stroke-width="4" stroke-linecap="round"
+                        stroke-linejoin="round"></path>
+                </svg>
+            </div>
+
+            <h2 class="pix-heading">Pedido aguardando pagamento</h2>
+            <p class="pix-instructions">
+                Copie o código abaixo e utilize o Pix Copia e Cola no aplicativo que você vai fazer o pagamento:
+            </p>
 
             <div id="pix-empty" class="pix-empty hidden">
                 <p>Não encontramos uma cobrança PIX ativa para este pedido.</p>
                 <a class="btn-secondary" href="checkout.html">Voltar ao pedido</a>
             </div>
 
-            <div id="pix-card" class="pix-card">
-                <div class="pix-qr">
-                    <img id="pix-qr" alt="QR Code Pix">
+            <div id="pix-card" class="pix-card pix-card--flat">
+                <div class="pix-copy-box">
+                    <input id="pix-code" class="pix-copy-input" type="text" readonly>
+                    <button id="btn-copy-pix-icon" class="pix-copy-icon" type="button" aria-label="Copiar código">
+                        <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                            <path
+                                d="M16 1H8c-1.1 0-2 .9-2 2v12h2V3h8V1Zm3 4H12c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h7c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16h-7V7h7v14Z">
+                            </path>
+                        </svg>
+                    </button>
                 </div>
 
-                <div class="pix-amount">
-                    Total do frete: <strong id="pix-amount">R$ 0,00</strong>
-                </div>
-
-                <div class="pix-code">
-                    <span class="pix-label">Pix copia e cola</span>
-                    <div class="pix-code-row">
-                        <textarea id="pix-code" class="pix-textarea" rows="3" readonly></textarea>
-                        <button id="btn-copy-pix" class="btn-secondary" type="button">Copiar</button>
+                <div class="pix-timer">
+                    <span class="pix-timer-label">O tempo para você pagar acaba em:</span>
+                    <div id="pix-timer" class="pix-timer-value">10:00</div>
+                    <div class="pix-progress">
+                        <div id="pix-progress-bar" class="pix-progress-bar"></div>
                     </div>
                 </div>
 
-                <p id="pix-status" class="small-text">Aguardando pagamento do frete.</p>
+                <button id="btn-copy-pix" class="btn-primary pix-copy-btn" type="button">Copiar código</button>
+                <a href="checkout.html" class="pix-link">Pagar com banco parceiro</a>
+
+                <div class="pix-order-card">
+                    <div class="pix-order-head">
+                        <div class="pix-order-avatar">iFood</div>
+                        <div>
+                            <div class="pix-order-title">Bag do iFood</div>
+                            <div class="pix-order-sub">Nº do pedido <span id="pix-order-id">—</span></div>
+                        </div>
+                    </div>
+                    <div class="pix-order-total">
+                        <span>Total no PIX</span>
+                        <strong id="pix-amount">R$ 0,00</strong>
+                    </div>
+                </div>
             </div>
         </section>
     </main>

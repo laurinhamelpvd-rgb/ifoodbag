@@ -866,10 +866,13 @@ function initPix() {
     const pixQr = document.getElementById('pix-qr');
     const pixCode = document.getElementById('pix-code');
     const pixAmount = document.getElementById('pix-amount');
-    const pixStatus = document.getElementById('pix-status');
     const pixEmpty = document.getElementById('pix-empty');
     const pixCard = document.getElementById('pix-card');
+    const pixTimer = document.getElementById('pix-timer');
+    const pixProgress = document.getElementById('pix-progress-bar');
+    const pixOrderId = document.getElementById('pix-order-id');
     const btnCopy = document.getElementById('btn-copy-pix');
+    const btnCopyIcon = document.getElementById('btn-copy-pix-icon');
 
     if (!pix) {
         if (pixEmpty) pixEmpty.classList.remove('hidden');
@@ -878,7 +881,6 @@ function initPix() {
     }
 
     if (pixAmount) pixAmount.textContent = formatCurrency(pix.amount || 0);
-    if (pixStatus) pixStatus.textContent = 'Aguardando pagamento do frete.';
     if (pixCode) pixCode.value = pix.paymentCode || '';
 
     if (pixQr && pix.paymentCodeBase64) {
@@ -886,25 +888,70 @@ function initPix() {
         pixQr.src = base64.startsWith('data:image') ? base64 : `data:image/png;base64,${base64}`;
     }
 
-    btnCopy?.addEventListener('click', async () => {
+    const handleCopy = async (button) => {
         if (!pixCode) return;
         const value = pixCode.value || '';
         if (!value) return;
+        const isIcon = button && button.id === 'btn-copy-pix-icon';
         try {
             await navigator.clipboard.writeText(value);
-            btnCopy.textContent = 'Copiado!';
-            setTimeout(() => {
-                btnCopy.textContent = 'Copiar';
-            }, 1600);
+            if (button) {
+                if (isIcon) {
+                    button.classList.add('pix-copy-icon--done');
+                    setTimeout(() => button.classList.remove('pix-copy-icon--done'), 1600);
+                } else {
+                    button.textContent = 'Copiado!';
+                    setTimeout(() => {
+                        button.textContent = 'Copiar';
+                    }, 1600);
+                }
+            }
         } catch (error) {
             pixCode.select();
             document.execCommand('copy');
-            btnCopy.textContent = 'Copiado!';
-            setTimeout(() => {
-                btnCopy.textContent = 'Copiar';
-            }, 1600);
+            if (button) {
+                if (isIcon) {
+                    button.classList.add('pix-copy-icon--done');
+                    setTimeout(() => button.classList.remove('pix-copy-icon--done'), 1600);
+                } else {
+                    button.textContent = 'Copiado!';
+                    setTimeout(() => {
+                        button.textContent = 'Copiar';
+                    }, 1600);
+                }
+            }
         }
-    });
+    };
+
+    btnCopy?.addEventListener('click', () => handleCopy(btnCopy));
+    btnCopyIcon?.addEventListener('click', () => handleCopy(btnCopy));
+
+    if (pixOrderId) {
+        const id = String(pix.idTransaction || '').trim();
+        pixOrderId.textContent = id ? id.slice(-6) : '—';
+    }
+
+    if (pixTimer && pixProgress) {
+        const totalSeconds = 600;
+        const createdAt = pix.createdAt || Date.now();
+        const endTime = createdAt + totalSeconds * 1000;
+
+        let timerId = null;
+        const updateTimer = () => {
+            const remaining = Math.max(0, endTime - Date.now());
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            pixTimer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            const pct = (remaining / (totalSeconds * 1000)) * 100;
+            pixProgress.style.width = `${Math.max(0, pct)}%`;
+            if (remaining <= 0) {
+                if (timerId) clearInterval(timerId);
+            }
+        };
+
+        updateTimer();
+        timerId = setInterval(updateTimer, 1000);
+    }
 }
 
 function renderQuestion(questionConfig, refs) {
