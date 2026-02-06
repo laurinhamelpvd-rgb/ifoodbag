@@ -1,4 +1,4 @@
-const { WEBHOOK_TOKEN } = require('../_ativus');
+const { WEBHOOK_TOKEN } = require('../../lib/ativus');
 
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {

@@ -7,7 +7,7 @@ const {
     extractIp,
     getSellerId,
     resolvePostbackUrl
-} = require('../_ativus');
+} = require('../../lib/ativus');
 
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
