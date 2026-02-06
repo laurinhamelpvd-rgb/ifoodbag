@@ -588,6 +588,58 @@ function initCheckout() {
         checkoutCep.addEventListener('input', () => maskCep(checkoutCep));
     }
 
+    let cepLookupTimer = null;
+    const handleCepAutoLookup = () => {
+        const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
+        if (rawCep.length !== 8) return;
+
+        if (summaryCep) summaryCep.textContent = formatCep(rawCep);
+        if (freightLoading) setHidden(freightLoading, false);
+
+        fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
+            .then((res) => {
+                if (!res.ok) throw new Error('CEP não encontrado');
+                return res.json();
+            })
+            .then((data) => {
+                const street = (data.street || '').trim();
+                const neighborhood = (data.neighborhood || '').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+                const city = (data.city || 'Cidade não informada').trim();
+                const stateUf = (data.state || '').trim();
+                const cityLine = stateUf ? `${city} - ${stateUf}` : city;
+
+                const updatedAddress = {
+                    ...(address || {}),
+                    streetLine,
+                    cityLine,
+                    cep: formatCep(rawCep),
+                    street,
+                    neighborhood,
+                    city,
+                    state: stateUf
+                };
+
+                saveAddress(updatedAddress);
+                address = updatedAddress;
+                updateSummaryAddress();
+                updateFreightAddress(updatedAddress);
+            })
+            .catch(() => {
+                showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
+            })
+            .finally(() => {
+                if (freightLoading) setHidden(freightLoading, true);
+            });
+    };
+
+    checkoutCep?.addEventListener('input', () => {
+        if (cepLookupTimer) clearTimeout(cepLookupTimer);
+        const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
+        if (rawCep.length !== 8) return;
+        cepLookupTimer = setTimeout(handleCepAutoLookup, 450);
+    });
+
     let cachedOptions = null;
     let cachedSelectedId = null;
 
