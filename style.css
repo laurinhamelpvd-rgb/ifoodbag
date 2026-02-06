@@ -1018,8 +1018,8 @@ body[data-page='pix'] .step {
     margin: 8px 0 6px;
 }
 
-.pix-hero svg {
-    width: min(260px, 76vw);
+.pix-hero img {
+    width: min(140px, 40vw);
     height: auto;
 }
 
