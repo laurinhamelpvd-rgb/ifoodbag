@@ -26,6 +26,10 @@
     font-family: var(--font-family);
 }
 
+html {
+    background-color: var(--primary-color);
+}
+
 button,
 input,
 select,
