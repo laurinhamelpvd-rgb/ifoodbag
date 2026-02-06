@@ -294,12 +294,13 @@ p {
 }
 
 .trust-item {
-    background: var(--surface-muted);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #4a4a4a;
+    background: #fff;
+    border-radius: 18px;
+    border: 2px solid var(--primary-color);
+    padding: 12px 12px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #2b2b2b;
     text-align: center;
     display: flex;
     align-items: center;
@@ -310,17 +311,17 @@ p {
 
 .trust-item--stack {
     flex-direction: column;
-    gap: 6px;
-    padding: 12px 10px;
+    gap: 8px;
+    padding: 14px 10px;
 }
 
 .trust-icon {
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #111;
+    color: var(--primary-color);
     flex-shrink: 0;
 }
 
@@ -330,16 +331,10 @@ p {
     fill: currentColor;
 }
 
-.trust-icon--ok {
-    color: #1db954;
-}
-
-.trust-icon--lock {
-    color: #ff8a00;
-}
-
-.trust-icon--truck {
-    color: #1f5fff;
+.trust-strip .trust-icon--ok,
+.trust-strip .trust-icon--lock,
+.trust-strip .trust-icon--truck {
+    color: var(--primary-color);
 }
 
 /* Options */
