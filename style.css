@@ -718,7 +718,7 @@ p {
 }
 
 .bump-hero img {
-    width: min(320px, 86vw);
+    width: min(560px, 98vw);
     height: auto;
     object-fit: contain;
 }
