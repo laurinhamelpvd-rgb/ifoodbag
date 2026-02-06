@@ -947,6 +947,8 @@ p {
     color: var(--primary-color);
     text-decoration: none;
     background: rgba(234, 29, 44, 0.08);
+    border: none;
+    cursor: pointer;
 }
 
 .freight-address__edit svg {

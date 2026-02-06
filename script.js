@@ -551,6 +551,7 @@ function initCheckout() {
     const freightAddress = document.getElementById('freight-address');
     const freightStreet = document.getElementById('freight-street');
     const freightCity = document.getElementById('freight-city');
+    const btnEditCep = document.getElementById('btn-edit-cep');
     const freightDetails = document.getElementById('freight-details');
     const addrNumber = document.getElementById('addr-number');
     const noNumber = document.getElementById('no-number');
@@ -638,6 +639,13 @@ function initCheckout() {
         const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
         if (rawCep.length !== 8) return;
         cepLookupTimer = setTimeout(handleCepAutoLookup, 450);
+    });
+
+    btnEditCep?.addEventListener('click', () => {
+        if (!checkoutCep) return;
+        checkoutCep.focus();
+        checkoutCep.select();
+        checkoutCep.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 
     let cachedOptions = null;
