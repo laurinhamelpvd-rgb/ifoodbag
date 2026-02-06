@@ -1,7 +1,7 @@
 const {
     API_KEY_B64,
     BASE_URL,
-    fetchFn,
+    fetchJson,
     authHeaders,
     sanitizeDigits,
     extractIp,
@@ -10,6 +10,8 @@ const {
 } = require('../../lib/ativus');
 
 module.exports = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+
     if (req.method !== 'POST') {
         res.status(405).json({ error: 'Method not allowed' });
         return;
@@ -17,15 +19,21 @@ module.exports = async (req, res) => {
 
     try {
         if (!API_KEY_B64) {
-            return res.status(500).json({ error: 'API Key nÃ£o configurada.' });
+            return res.status(500).json({ error: 'API Key não configurada.' });
         }
 
-        const rawBody = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+        let rawBody = {};
+        try {
+            rawBody = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+        } catch (error) {
+            return res.status(400).json({ error: 'JSON inválido no corpo da requisição.' });
+        }
+
         const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump } = rawBody;
         const value = Number(amount);
 
         if (!value || value <= 0) {
-            return res.status(400).json({ error: 'Valor do frete invÃ¡lido.' });
+            return res.status(400).json({ error: 'Valor do frete inválido.' });
         }
 
         const name = String(personal.name || '').trim();
@@ -109,13 +117,12 @@ module.exports = async (req, res) => {
             }
         };
 
-        const response = await fetchFn(`${BASE_URL}/v1/gateway/api/`, {
+        const { response, data } = await fetchJson(`${BASE_URL}/v1/gateway/api/`, {
             method: 'POST',
             headers: authHeaders,
             body: JSON.stringify(payload)
         });
 
-        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             return res.status(response.status).json({
                 error: 'Falha ao gerar o PIX.',
