@@ -196,6 +196,7 @@ p {
     height: auto;
     object-fit: contain;
     object-position: center;
+    transform: scale(1.06);
 }
 
 /* Success Image */
