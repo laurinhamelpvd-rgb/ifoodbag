@@ -351,9 +351,17 @@ p {
 }
 
 .trust-icon-img {
-    width: 54px;
-    height: auto;
+    width: 56px;
+    height: 34px;
+    object-fit: contain;
+    object-position: center;
     display: block;
+}
+
+.trust-card span {
+    display: block;
+    min-height: 2.2em;
+    line-height: 1.1;
 }
 
 @media (max-width: 479px) {
@@ -362,11 +370,13 @@ p {
         min-height: 92px;
     }
     .trust-icon-img {
-        width: 44px;
+        width: 46px;
+        height: 28px;
     }
     .trust-card span {
         font-size: 0.78rem;
         line-height: 1.1;
+        min-height: 2.25em;
     }
 }
 
