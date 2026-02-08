@@ -6,6 +6,7 @@ const { ensureAllowedRequest, issueSessionCookie } = require('./lib/request-guar
 const { getSettings, saveSettings, defaultSettings } = require('./lib/settings-store');
 const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin } = require('./lib/admin-auth');
 const { sendUtmfy } = require('./lib/utmfy');
+const { upsertPageview } = require('./lib/pageviews-store');
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -231,6 +232,22 @@ app.post('/api/lead/track', async (req, res) => {
     }
 });
 
+app.post('/api/lead/pageview', async (req, res) => {
+    if (!ensureAllowedRequest(req, res, { requireSession: true })) {
+        return;
+    }
+    const result = await upsertPageview(req.body?.sessionId, req.body?.page);
+    if (!result.ok && result.reason === 'missing_supabase_config') {
+        res.status(202).json({ ok: false, reason: result.reason });
+        return;
+    }
+    if (!result.ok) {
+        res.status(502).json({ ok: false, reason: result.reason, detail: result.detail || '' });
+        return;
+    }
+    res.json({ ok: true });
+});
+
 app.get('/api/site/session', (req, res) => {
     if (!ensureAllowedRequest(req, res, { requireSession: false })) {
         return;
@@ -344,6 +361,37 @@ app.get('/api/admin/leads', async (req, res) => {
     if (!response.ok) {
         const detail = await response.text().catch(() => '');
         res.status(502).json({ error: 'Falha ao buscar leads.', detail });
+        return;
+    }
+
+    const data = await response.json().catch(() => []);
+    res.json({ data });
+});
+
+app.get('/api/admin/pages', async (req, res) => {
+    if (!ensureAllowedRequest(req, res, { requireSession: false })) {
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || '';
+    const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+        res.status(500).json({ error: 'Supabase nao configurado.' });
+        return;
+    }
+
+    const response = await fetchFn(`${SUPABASE_URL}/rest/v1/pageview_counts?select=*`, {
+        headers: {
+            apikey: SUPABASE_SERVICE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        res.status(502).json({ error: 'Falha ao buscar paginas.', detail });
         return;
     }
 

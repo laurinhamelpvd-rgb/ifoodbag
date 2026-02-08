@@ -63,6 +63,24 @@ create index if not exists idx_leads_cpf on public.leads (cpf);
 create index if not exists idx_leads_email on public.leads (email);
 create index if not exists idx_leads_phone on public.leads (phone);
 
+create table if not exists public.lead_pageviews (
+  session_id text not null,
+  page text not null,
+  created_at timestamptz not null default now(),
+  primary key (session_id, page)
+);
+
+create index if not exists idx_lead_pageviews_page on public.lead_pageviews (page);
+
+drop view if exists public.pageview_counts;
+create view public.pageview_counts as
+select
+  page,
+  count(*)::int as total
+from public.lead_pageviews
+group by page
+order by total desc;
+
 drop view if exists public.leads_readable;
 create view public.leads_readable as
 select

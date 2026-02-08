@@ -128,6 +128,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initStockCounter();
 
     const page = document.body.dataset.page || '';
+    if (page && page !== 'admin') {
+        trackPageView(page);
+    }
     switch (page) {
         case 'home':
             initHome();
@@ -1285,6 +1288,7 @@ function initAdmin() {
     const metricUpdated = document.getElementById('metric-updated');
     const metricBase = document.getElementById('metric-base');
     const navItems = document.querySelectorAll('.admin-nav-item');
+    const pagesGrid = document.getElementById('pages-grid');
 
     let offset = 0;
     const limit = 50;
@@ -1440,6 +1444,24 @@ function initAdmin() {
         loadingLeads = false;
     };
 
+    const loadPageCounts = async () => {
+        if (!pagesGrid) return;
+        const res = await adminFetch('/api/admin/pages');
+        if (!res.ok) return;
+        const data = await res.json();
+        const rows = data.data || [];
+        pagesGrid.innerHTML = '';
+        rows.forEach((row) => {
+            const card = document.createElement('div');
+            card.className = 'admin-page-card';
+            card.innerHTML = `
+                <strong>${row.total ?? 0}</strong>
+                <span>${row.page || '-'}</span>
+            `;
+            pagesGrid.appendChild(card);
+        });
+    };
+
     loginBtn?.addEventListener('click', async () => {
         if (loginError) loginError.classList.add('hidden');
         const password = passwordInput?.value || '';
@@ -1478,6 +1500,7 @@ function initAdmin() {
             setLoginVisible(false);
             loadSettings();
             loadLeads({ reset: true });
+            loadPageCounts();
         } else {
             setLoginVisible(true);
         }
@@ -1872,6 +1895,21 @@ function captureUtmParams() {
         landing_page: current.landing_page || window.location.pathname
     };
     localStorage.setItem(STORAGE_KEYS.utm, JSON.stringify(updated));
+}
+
+function trackPageView(page) {
+    if (!page) return;
+    ensureApiSession().then(() => {
+        fetch('/api/lead/pageview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: getLeadSessionId(),
+                page
+            }),
+            keepalive: true
+        }).catch(() => null);
+    }).catch(() => null);
 }
 
 function getUtmData() {
