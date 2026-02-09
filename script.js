@@ -2098,7 +2098,9 @@ function trackPageView(page) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 sessionId: getLeadSessionId(),
-                page
+                page,
+                sourceUrl: window.location.href,
+                utm: getUtmData()
             }),
             keepalive: true
         }).catch(() => null);

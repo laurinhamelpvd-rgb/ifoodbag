@@ -1,5 +1,6 @@
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { upsertPageview } = require('../../lib/pageviews-store');
+const { sendUtmfy } = require('../../lib/utmfy');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -29,6 +30,25 @@ module.exports = async (req, res) => {
         res.status(502).json({ ok: false, reason: result.reason, detail: result.detail || '' });
         return;
     }
+
+    const forwarded = req.headers['x-forwarded-for'];
+    const clientIp = typeof forwarded === 'string' && forwarded
+        ? forwarded.split(',')[0].trim()
+        : req.socket?.remoteAddress || '';
+
+    sendUtmfy('page_view', {
+        event: 'page_view',
+        page: body.page || '',
+        sessionId: body.sessionId || '',
+        sourceUrl: body.sourceUrl || '',
+        utm: body.utm || {},
+        metadata: {
+            received_at: new Date().toISOString(),
+            user_agent: req.headers['user-agent'] || '',
+            referrer: req.headers['referer'] || '',
+            client_ip: clientIp
+        }
+    }).catch(() => null);
 
     res.status(200).json({ ok: true });
 };
