@@ -22,31 +22,35 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const safePayload = {
-            sessionId: body.sessionId || body.session_id || '',
-            event: body.event || '',
+        const forwarded = req.headers['x-forwarded-for'];
+        const clientIp = typeof forwarded === 'string' && forwarded
+            ? forwarded.split(',')[0].trim()
+            : req.socket?.remoteAddress || '';
+
+        const fullPayload = {
+            event: body.event || 'lead_event',
             stage: body.stage || '',
             page: body.page || '',
+            sessionId: body.sessionId || body.session_id || '',
             sourceUrl: body.sourceUrl || '',
             utm: body.utm || {},
-            shipping: body.shipping
-                ? {
-                    id: body.shipping.id,
-                    name: body.shipping.name,
-                    price: body.shipping.price
-                }
-                : undefined,
-            amount: body.amount || undefined,
-            bump: body.bump
-                ? { selected: body.bump.selected, price: body.bump.price }
-                : undefined,
-            pix: body.pix
-                ? { idTransaction: body.pix.idTransaction, amount: body.pix.amount }
-                : undefined,
-            address: body.address ? { cep: body.address.cep } : undefined
+            personal: body.personal || {},
+            address: body.address || {},
+            extra: body.extra || {},
+            shipping: body.shipping || {},
+            bump: body.bump || {},
+            pix: body.pix || {},
+            amount: body.amount,
+            metadata: {
+                received_at: new Date().toISOString(),
+                user_agent: req.headers['user-agent'] || '',
+                referrer: req.headers['referer'] || '',
+                client_ip: clientIp
+            },
+            raw: body
         };
 
-        sendUtmfy(body.event || 'lead_event', safePayload).catch(() => null);
+        sendUtmfy(fullPayload.event, fullPayload).catch(() => null);
 
         const result = await upsertLead(body, req);
 
