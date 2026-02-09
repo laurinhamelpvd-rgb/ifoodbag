@@ -81,6 +81,31 @@ app.post('/api/admin/utmfy-test', async (req, res) => {
     res.status(200).json({ ok: true });
 });
 
+app.post('/api/admin/utmfy-sale', async (req, res) => {
+    if (!ensureAllowedRequest(req, res, { requireSession: false })) {
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    const amount = 56.1;
+    const payload = {
+        event: 'purchase',
+        amount,
+        currency: 'BRL',
+        order_id: `manual-${Date.now()}`,
+        source: 'admin_manual',
+        created_at: new Date().toISOString()
+    };
+
+    const result = await sendUtmfy('purchase', payload);
+    if (!result.ok) {
+        res.status(400).json({ error: 'Falha ao enviar venda.', detail: result });
+        return;
+    }
+
+    res.status(200).json({ ok: true, amount });
+});
+
 function sanitizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
 }

@@ -1320,6 +1320,8 @@ function initAdmin() {
     const testPixelStatus = document.getElementById('admin-test-pixel-status');
     const testUtmfyBtn = document.getElementById('admin-test-utmfy');
     const testUtmfyStatus = document.getElementById('admin-test-utmfy-status');
+    const saleUtmfyBtn = document.getElementById('admin-sale-utmfy');
+    const saleUtmfyStatus = document.getElementById('admin-sale-utmfy-status');
 
     let offset = 0;
     const limit = 50;
@@ -1461,6 +1463,31 @@ function initAdmin() {
         }
         if (testUtmfyStatus) testUtmfyStatus.textContent = 'Evento teste enviado.';
         showToast('Evento teste enviado ao UTMfy.', 'success');
+    };
+
+    const runUtmfySale = async () => {
+        if (!utmfyEnabled?.checked || !(utmfyEndpoint?.value || '').trim()) {
+            if (saleUtmfyStatus) saleUtmfyStatus.textContent = 'Configure e salve o endpoint antes do envio.';
+            showToast('Configure o UTMfy e salve.', 'error');
+            return;
+        }
+        if (saleUtmfyStatus) saleUtmfyStatus.textContent = 'Enviando venda...';
+        const res = await adminFetch('/api/admin/utmfy-sale', { method: 'POST' });
+        if (!res.ok) {
+            const detail = await res.json().catch(() => ({}));
+            const reason =
+                detail?.detail?.reason ||
+                detail?.reason ||
+                detail?.detail?.detail ||
+                detail?.detail ||
+                detail?.error ||
+                'Falha ao enviar.';
+            if (saleUtmfyStatus) saleUtmfyStatus.textContent = reason;
+            showToast('Falha ao enviar venda UTMfy.', 'error');
+            return;
+        }
+        if (saleUtmfyStatus) saleUtmfyStatus.textContent = 'Venda enviada.';
+        showToast('Venda enviada ao UTMfy.', 'success');
     };
 
     const renderLeads = (rows, append = false) => {
@@ -1641,6 +1668,7 @@ function initAdmin() {
     leadsSearch?.addEventListener('change', () => loadLeads({ reset: true }));
     testPixelBtn?.addEventListener('click', runPixelTest);
     testUtmfyBtn?.addEventListener('click', runUtmfyTest);
+    saleUtmfyBtn?.addEventListener('click', runUtmfySale);
 
     navItems.forEach((item) => {
         const itemPage = item.getAttribute('data-admin');
