@@ -1439,11 +1439,23 @@ function initAdmin() {
     };
 
     const runUtmfyTest = async () => {
+        if (!utmfyEnabled?.checked || !(utmfyEndpoint?.value || '').trim()) {
+            if (testUtmfyStatus) testUtmfyStatus.textContent = 'Configure e salve o endpoint antes do teste.';
+            showToast('Configure o UTMfy e salve.', 'error');
+            return;
+        }
         if (testUtmfyStatus) testUtmfyStatus.textContent = 'Enviando evento...';
         const res = await adminFetch('/api/admin/utmfy-test', { method: 'POST' });
         if (!res.ok) {
             const detail = await res.json().catch(() => ({}));
-            if (testUtmfyStatus) testUtmfyStatus.textContent = detail?.error || 'Falha ao enviar.';
+            const reason =
+                detail?.detail?.reason ||
+                detail?.reason ||
+                detail?.detail?.detail ||
+                detail?.detail ||
+                detail?.error ||
+                'Falha ao enviar.';
+            if (testUtmfyStatus) testUtmfyStatus.textContent = reason;
             showToast('Falha ao enviar evento UTMfy.', 'error');
             return;
         }
