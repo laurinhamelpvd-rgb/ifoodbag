@@ -309,8 +309,24 @@ module.exports = async (req, res) => {
         return;
     }
 
-    const pathParts = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean);
-    const route = pathParts.join('/');
+    let route = '';
+    if (req.query && typeof req.query.path !== 'undefined') {
+        const pathParts = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean);
+        route = pathParts.join('/');
+    }
+    if (!route && req.url) {
+        try {
+            const url = new URL(req.url, 'http://localhost');
+            const prefix = '/api/admin/';
+            const idx = url.pathname.indexOf(prefix);
+            if (idx >= 0) {
+                route = url.pathname.slice(idx + prefix.length);
+            }
+        } catch (_error) {
+            route = '';
+        }
+    }
+    route = String(route || '').replace(/^\/+|\/+$/g, '');
 
     switch (route) {
         case 'login':
