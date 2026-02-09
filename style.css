@@ -2045,6 +2045,30 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     background: #fff5f6;
 }
 
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-pill--paid {
+    background: rgba(45, 180, 87, 0.16);
+    color: #1b7a3a;
+    border: 1px solid rgba(45, 180, 87, 0.3);
+}
+
+.status-pill--neutral {
+    background: #f1f2f6;
+    color: #5a5a5a;
+    border: 1px solid #e1e3ea;
+}
+
 .admin-pages-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

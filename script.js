@@ -1496,13 +1496,15 @@ function initAdmin() {
 
         rows.forEach((row) => {
             const tr = document.createElement('tr');
+            const isPaid = String(row.evento || '') === 'pix_confirmed';
+            const statusLabel = isPaid ? 'pagamento_confirmado' : (row.status_funil || '-');
             tr.innerHTML = `
                 <td>${row.nome || '-'}</td>
                 <td>${row.email || '-'}</td>
                 <td>${row.telefone || '-'}</td>
                 <td>${row.utm_source || '-'}</td>
                 <td>${row.etapa || '-'}</td>
-                <td>${row.status_funil || '-'}</td>
+                <td><span class="status-pill ${isPaid ? 'status-pill--paid' : 'status-pill--neutral'}">${statusLabel}</span></td>
                 <td>${row.frete || '-'}</td>
                 <td>${row.valor_total ? formatCurrency(row.valor_total) : '-'}</td>
                 <td>${row.updated_at ? new Date(row.updated_at).toLocaleString('pt-BR') : '-'}</td>
