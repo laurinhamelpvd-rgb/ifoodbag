@@ -3,7 +3,10 @@ const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin }
 const { getSettings, saveSettings, defaultSettings } = require('../../lib/settings-store');
 const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid } = require('../../lib/lead-store');
+const { sendPushcut } = require('../../lib/pushcut');
+const { sendPixelServerEvent } = require('../../lib/pixel-capi');
 const { BASE_URL, fetchJson, authHeaders } = require('../../lib/ativus');
+const { getAtivusStatus, isAtivusPaidStatus, isAtivusPendingStatus } = require('../../lib/ativus-status');
 
 const fetchFn = global.fetch
     ? global.fetch.bind(global)
@@ -13,67 +16,55 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SUPABASE_PROJECT_UR
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
 
 const pick = (...values) => values.find((value) => value !== undefined && value !== null && value !== '');
-const isPaidStatus = (statusRaw) => {
-    const status = String(statusRaw || '').trim().toLowerCase();
-    if (!status) return false;
-    const paidTokens = [
-        'paid',
-        'approved',
-        'aprovado',
-        'confirm',
-        'confirmed',
-        'completed',
-        'success',
-        'sucesso',
-        'conclu'
-    ];
-    return paidTokens.some((token) => status.includes(token));
-};
 const clamp = (value, min, max) => Math.min(Math.max(Number(value) || 0, min), max);
 
-function pickTxid(node) {
-    return pick(
-        node?.idTransaction,
-        node?.idtransaction,
-        node?.id_transaction,
-        node?.transaction_id,
-        node?.txid
-    );
-}
+async function listLeadTxidsForReconcile({ maxTx = 2000, pageSize = 500 } = {}) {
+    const txids = [];
+    let offset = 0;
 
-function pickStatus(node) {
-    return pick(
-        node?.status,
-        node?.status_transaction,
-        node?.statusTransaction,
-        node?.situacao,
-        node?.transaction_status
-    );
-}
+    while (txids.length < maxTx) {
+        const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
+        const limit = Math.min(pageSize, maxTx - txids.length);
+        url.searchParams.set('select', 'pix_txid,last_event,updated_at');
+        url.searchParams.set('pix_txid', 'not.is.null');
+        url.searchParams.set('or', '(last_event.is.null,last_event.neq.pix_confirmed)');
+        url.searchParams.set('order', 'updated_at.desc');
+        url.searchParams.set('limit', String(limit));
+        url.searchParams.set('offset', String(offset));
 
-function collectAtivusTransactions(payload, txidMap = new Map()) {
-    if (Array.isArray(payload)) {
-        payload.forEach((item) => collectAtivusTransactions(item, txidMap));
-        return txidMap;
-    }
-    if (!payload || typeof payload !== 'object') {
-        return txidMap;
-    }
+        const response = await fetchFn(url.toString(), {
+            headers: {
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
 
-    const txid = String(pickTxid(payload) || '').trim();
-    if (txid) {
-        if (!txidMap.has(txid)) {
-            txidMap.set(txid, { txid, status: String(pickStatus(payload) || '').trim() });
-        } else if (!txidMap.get(txid).status) {
-            txidMap.get(txid).status = String(pickStatus(payload) || '').trim();
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            return { ok: false, detail };
         }
+
+        const rows = await response.json().catch(() => []);
+        if (!Array.isArray(rows) || rows.length === 0) {
+            break;
+        }
+
+        rows.forEach((row) => {
+            const txid = String(row?.pix_txid || '').trim();
+            if (txid) txids.push(txid);
+        });
+
+        if (rows.length < limit) {
+            break;
+        }
+        offset += rows.length;
     }
 
-    Object.keys(payload).forEach((key) => {
-        collectAtivusTransactions(payload[key], txidMap);
-    });
-
-    return txidMap;
+    return {
+        ok: true,
+        txids: Array.from(new Set(txids))
+    };
 }
 
 async function getLeads(req, res) {
@@ -210,11 +201,23 @@ async function settings(req, res) {
             ...body,
             pixel: {
                 ...defaultSettings.pixel,
-                ...(body.pixel || {})
+                ...(body.pixel || {}),
+                capi: {
+                    ...defaultSettings.pixel.capi,
+                    ...(body.pixel?.capi || {})
+                },
+                events: {
+                    ...defaultSettings.pixel.events,
+                    ...(body.pixel?.events || {})
+                }
             },
             utmfy: {
                 ...defaultSettings.utmfy,
                 ...(body.utmfy || {})
+            },
+            pushcut: {
+                ...defaultSettings.pushcut,
+                ...(body.pushcut || {})
             },
             features: {
                 ...defaultSettings.features,
@@ -296,27 +299,23 @@ async function pixReconcile(req, res) {
 
     const maxTx = clamp(req.query?.maxTx || 2000, 1, 20000);
     const concurrency = clamp(req.query?.concurrency || 6, 1, 12);
-
-    const { response: saldoResponse, data: saldoData } = await fetchJson(`${BASE_URL}/s1/getsaldo/api/`, {
-        method: 'GET',
-        headers: authHeaders
-    });
-    if (!saldoResponse.ok) {
+    const pageSize = clamp(req.query?.pageSize || 500, 50, 1000);
+    const txidList = await listLeadTxidsForReconcile({ maxTx, pageSize });
+    if (!txidList.ok) {
         res.status(502).json({
-            error: 'Falha ao buscar transacoes na AtivusHUB.',
-            detail: saldoData
+            error: 'Falha ao buscar txids no banco.',
+            detail: txidList.detail || ''
         });
         return;
     }
-
-    const txidMap = collectAtivusTransactions(saldoData);
-    const uniqueTxids = Array.from(txidMap.keys()).slice(0, maxTx);
+    const uniqueTxids = txidList.txids;
 
     let checked = 0;
     let confirmed = 0;
     let pending = 0;
     let failed = 0;
     let updated = 0;
+    let failedDetails = [];
 
     const runOne = async (txid) => {
         checked += 1;
@@ -327,30 +326,60 @@ async function pixReconcile(req, res) {
             );
             if (!response.ok) {
                 failed += 1;
+                if (failedDetails.length < 8) {
+                    failedDetails.push({
+                        txid,
+                        status: response.status,
+                        detail: data?.error || data?.message || ''
+                    });
+                }
                 return;
             }
-            const status = pick(
-                data?.status,
-                data?.status_transaction,
-                data?.situacao,
-                data?.transaction_status,
-                data?.data?.status
-            );
-            if (isPaidStatus(status)) {
+            const status = getAtivusStatus(data);
+            if (isAtivusPaidStatus(status)) {
                 confirmed += 1;
                 const up = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false }));
-                if (up?.ok && Number(up?.count || 0) > 0) updated += Number(up.count || 0);
-                sendUtmfy('pix_confirmed', {
-                    event: 'pix_confirmed',
-                    txid,
-                    status: String(status || '').toLowerCase(),
-                    payload: data
-                }).catch(() => null);
-            } else {
+                const changedRows = up?.ok ? Number(up?.count || 0) : 0;
+                if (changedRows > 0) {
+                    updated += changedRows;
+                    const amount = Number(
+                        data?.amount ||
+                        data?.valor_bruto ||
+                        data?.valor_liquido ||
+                        data?.data?.amount ||
+                        0
+                    );
+                    sendUtmfy('pix_confirmed', {
+                        event: 'pix_confirmed',
+                        txid,
+                        status,
+                        amount,
+                        payload: data
+                    }).catch(() => null);
+                    sendUtmfy('purchase', {
+                        event: 'purchase',
+                        txid,
+                        status,
+                        amount,
+                        currency: 'BRL',
+                        payload: data
+                    }).catch(() => null);
+                    sendPushcut('pix_confirmed', { txid, status, amount }).catch(() => null);
+                    sendPixelServerEvent('Purchase', { amount }, req).catch(() => null);
+                }
+            } else if (isAtivusPendingStatus(status)) {
                 pending += 1;
+            } else {
+                failed += 1;
+                if (failedDetails.length < 8) {
+                    failedDetails.push({ txid, status: 200, detail: `status:${status || 'unknown'}` });
+                }
             }
         } catch (_error) {
             failed += 1;
+            if (failedDetails.length < 8) {
+                failedDetails.push({ txid, status: 0, detail: 'request_error' });
+            }
         }
     };
 
@@ -368,7 +397,8 @@ async function pixReconcile(req, res) {
         confirmed,
         pending,
         failed,
-        updated
+        updated,
+        failedDetails
     });
 }
 

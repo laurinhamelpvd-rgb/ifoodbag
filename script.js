@@ -1314,10 +1314,19 @@ function initAdmin() {
     const pixelEventPage = document.getElementById('pixel-event-page');
     const pixelEventLead = document.getElementById('pixel-event-lead');
     const pixelEventPurchase = document.getElementById('pixel-event-purchase');
+    const pixelEventCheckout = document.getElementById('pixel-event-checkout');
+    const pixelEventPaymentInfo = document.getElementById('pixel-event-paymentinfo');
+    const pixelEventAddToCart = document.getElementById('pixel-event-addtocart');
+    const pixelCapiEnabled = document.getElementById('pixel-capi-enabled');
+    const pixelCapiToken = document.getElementById('pixel-capi-token');
+    const pixelCapiTestCode = document.getElementById('pixel-capi-test-code');
 
     const utmfyEnabled = document.getElementById('utmfy-enabled');
     const utmfyEndpoint = document.getElementById('utmfy-endpoint');
     const utmfyApi = document.getElementById('utmfy-api');
+    const pushcutEnabled = document.getElementById('pushcut-enabled');
+    const pushcutPixCreated = document.getElementById('pushcut-pix-created');
+    const pushcutPixConfirmed = document.getElementById('pushcut-pix-confirmed');
 
     const saveBtn = document.getElementById('admin-save');
     const saveStatus = document.getElementById('admin-save-status');
@@ -1368,8 +1377,12 @@ function initAdmin() {
     };
     let currentSettings = null;
 
-    const hasPixelForm = !!(pixelEnabled || pixelId || pixelEventPage || pixelEventLead || pixelEventPurchase);
-    const hasUtmfyForm = !!(utmfyEnabled || utmfyEndpoint || utmfyApi);
+    const hasPixelForm = !!(
+        pixelEnabled || pixelId || pixelEventPage || pixelEventLead || pixelEventPurchase ||
+        pixelEventCheckout || pixelEventPaymentInfo || pixelEventAddToCart ||
+        pixelCapiEnabled || pixelCapiToken || pixelCapiTestCode
+    );
+    const hasUtmfyForm = !!(utmfyEnabled || utmfyEndpoint || utmfyApi || pushcutEnabled || pushcutPixCreated || pushcutPixConfirmed);
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
     const wantsPages = !!pagesGrid;
@@ -1405,12 +1418,21 @@ function initAdmin() {
             if (pixelEventPage) pixelEventPage.checked = data.pixel?.events?.page_view !== false;
             if (pixelEventLead) pixelEventLead.checked = data.pixel?.events?.lead !== false;
             if (pixelEventPurchase) pixelEventPurchase.checked = data.pixel?.events?.purchase !== false;
+            if (pixelEventCheckout) pixelEventCheckout.checked = data.pixel?.events?.checkout !== false;
+            if (pixelEventPaymentInfo) pixelEventPaymentInfo.checked = data.pixel?.events?.add_payment_info !== false;
+            if (pixelEventAddToCart) pixelEventAddToCart.checked = data.pixel?.events?.add_to_cart !== false;
+            if (pixelCapiEnabled) pixelCapiEnabled.checked = !!data.pixel?.capi?.enabled;
+            if (pixelCapiToken) pixelCapiToken.value = data.pixel?.capi?.accessToken || '';
+            if (pixelCapiTestCode) pixelCapiTestCode.value = data.pixel?.capi?.testEventCode || '';
         }
 
         if (hasUtmfyForm) {
             if (utmfyEnabled) utmfyEnabled.checked = !!data.utmfy?.enabled;
             if (utmfyEndpoint) utmfyEndpoint.value = data.utmfy?.endpoint || '';
             if (utmfyApi) utmfyApi.value = data.utmfy?.apiKey || '';
+            if (pushcutEnabled) pushcutEnabled.checked = !!data.pushcut?.enabled;
+            if (pushcutPixCreated) pushcutPixCreated.value = data.pushcut?.pixCreatedUrl || '';
+            if (pushcutPixConfirmed) pushcutPixConfirmed.value = data.pushcut?.pixConfirmedUrl || '';
         }
 
         if (hasFeatureForm) {
@@ -1436,7 +1458,16 @@ function initAdmin() {
                     ...(currentSettings?.pixel?.events || {}),
                     page_view: pixelEventPage?.checked !== false,
                     lead: pixelEventLead?.checked !== false,
-                    purchase: pixelEventPurchase?.checked !== false
+                    purchase: pixelEventPurchase?.checked !== false,
+                    checkout: pixelEventCheckout?.checked !== false,
+                    add_payment_info: pixelEventPaymentInfo?.checked !== false,
+                    add_to_cart: pixelEventAddToCart?.checked !== false
+                },
+                capi: {
+                    ...(currentSettings?.pixel?.capi || {}),
+                    enabled: !!pixelCapiEnabled?.checked,
+                    accessToken: pixelCapiToken?.value?.trim() || '',
+                    testEventCode: pixelCapiTestCode?.value?.trim() || ''
                 }
             };
         }
@@ -1447,6 +1478,12 @@ function initAdmin() {
                 enabled: !!utmfyEnabled?.checked,
                 endpoint: utmfyEndpoint?.value?.trim() || '',
                 apiKey: utmfyApi?.value?.trim() || ''
+            };
+            payload.pushcut = {
+                ...(currentSettings?.pushcut || {}),
+                enabled: !!pushcutEnabled?.checked,
+                pixCreatedUrl: pushcutPixCreated?.value?.trim() || '',
+                pixConfirmedUrl: pushcutPixConfirmed?.value?.trim() || ''
             };
         }
 
@@ -1638,7 +1675,8 @@ function initAdmin() {
         if (!res.ok) {
             const detail = await res.json().catch(() => ({}));
             if (leadsReconcileStatus) {
-                leadsReconcileStatus.textContent = detail?.error || 'Falha ao reconciliar.';
+                const extra = detail?.detail ? ` (${typeof detail.detail === 'string' ? detail.detail : JSON.stringify(detail.detail).slice(0, 180)})` : '';
+                leadsReconcileStatus.textContent = `${detail?.error || 'Falha ao reconciliar.'}${extra}`;
             }
             showToast('Falha ao reconciliar PIX.', 'error');
             leadsReconcile.disabled = false;
@@ -1646,7 +1684,7 @@ function initAdmin() {
         }
         const data = await res.json().catch(() => ({}));
         if (leadsReconcileStatus) {
-            leadsReconcileStatus.textContent = `Checados ${data.checked || 0}, confirmados ${data.confirmed || 0}.`;
+            leadsReconcileStatus.textContent = `Checados ${data.checked || 0}, confirmados ${data.confirmed || 0}, atualizados ${data.updated || 0}.`;
         }
         showToast('Reconciliacao finalizada.', 'success');
         leadsReconcile.disabled = false;
@@ -2291,21 +2329,27 @@ function maybeTrackPixel(eventName, payload = {}) {
     }
 
     if (eventName === 'checkout_view') {
-        firePixelEvent('InitiateCheckout', { currency: 'BRL' });
+        if (pixel.events?.checkout !== false) {
+            firePixelEvent('InitiateCheckout', { currency: 'BRL' });
+        }
     }
 
     if (eventName === 'frete_selected') {
-        firePixelEvent('AddPaymentInfo', {
-            value: Number(shipping.price || 0),
-            currency: 'BRL'
-        });
+        if (pixel.events?.add_payment_info !== false) {
+            firePixelEvent('AddPaymentInfo', {
+                value: Number(shipping.price || 0),
+                currency: 'BRL'
+            });
+        }
     }
 
     if (eventName === 'orderbump_accepted') {
-        firePixelEvent('AddToCart', {
-            value: Number(payload.bump?.price || payload.bumpPrice || 0),
-            currency: 'BRL'
-        });
+        if (pixel.events?.add_to_cart !== false) {
+            firePixelEvent('AddToCart', {
+                value: Number(payload.bump?.price || payload.bumpPrice || 0),
+                currency: 'BRL'
+            });
+        }
     }
 
     if (eventName === 'pix_created_front' && pixel.events?.purchase !== false) {

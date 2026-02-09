@@ -11,6 +11,7 @@ const {
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { sendUtmfy } = require('../../lib/utmfy');
+const { sendPushcut } = require('../../lib/pushcut');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -174,6 +175,13 @@ module.exports = async (req, res) => {
             shipping,
             bump,
             utm: rawBody.utm || {}
+        }).catch(() => null);
+
+        sendPushcut('pix_created', {
+            txid: data.idTransaction || data.idtransaction || '',
+            amount: totalAmount,
+            shippingName: shipping?.name || '',
+            cep: zipCode
         }).catch(() => null);
 
         return res.status(200).json({

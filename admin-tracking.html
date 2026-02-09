@@ -79,6 +79,31 @@
               <label><input type="checkbox" id="pixel-event-page" /> PageView</label>
               <label><input type="checkbox" id="pixel-event-lead" /> Lead</label>
               <label><input type="checkbox" id="pixel-event-purchase" /> Purchase</label>
+              <label><input type="checkbox" id="pixel-event-checkout" /> InitiateCheckout</label>
+              <label><input type="checkbox" id="pixel-event-paymentinfo" /> AddPaymentInfo</label>
+              <label><input type="checkbox" id="pixel-event-addtocart" /> AddToCart</label>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-section admin-section--card">
+          <div class="admin-section-header">
+            <h2>Pixel CAPI (server-side)</h2>
+            <span class="admin-chip">Webhook</span>
+          </div>
+          <p class="admin-hint">Dispara Purchase no servidor quando a Ativus confirmar pagamento.</p>
+          <div class="admin-grid">
+            <label class="admin-switch">
+              <input type="checkbox" id="pixel-capi-enabled" />
+              <span>Ativar CAPI</span>
+            </label>
+            <div class="input-group">
+              <input type="password" id="pixel-capi-token" class="floating-input" placeholder=" " />
+              <label for="pixel-capi-token" class="floating-label">Access Token (Meta)</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="pixel-capi-test-code" class="floating-input" placeholder=" " />
+              <label for="pixel-capi-test-code" class="floating-label">Test Event Code (opcional)</label>
             </div>
           </div>
         </section>

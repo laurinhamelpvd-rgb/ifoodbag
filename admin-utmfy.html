@@ -105,6 +105,28 @@
             <span id="admin-sale-utmfy-status" class="admin-muted"></span>
           </div>
         </section>
+
+        <section class="admin-section admin-section--card">
+          <div class="admin-section-header">
+            <h2>Pushcut</h2>
+            <span class="admin-chip">Notificacoes</span>
+          </div>
+          <p class="admin-hint">URLs de webhook para notificar PIX gerado e pagamento confirmado.</p>
+          <div class="admin-grid">
+            <label class="admin-switch">
+              <input type="checkbox" id="pushcut-enabled" />
+              <span>Pushcut ativo</span>
+            </label>
+            <div class="input-group">
+              <input type="url" id="pushcut-pix-created" class="floating-input" placeholder=" " />
+              <label for="pushcut-pix-created" class="floating-label">URL PIX gerado</label>
+            </div>
+            <div class="input-group">
+              <input type="url" id="pushcut-pix-confirmed" class="floating-input" placeholder=" " />
+              <label for="pushcut-pix-confirmed" class="floating-label">URL pagamento confirmado</label>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
