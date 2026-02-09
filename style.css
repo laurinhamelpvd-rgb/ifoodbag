@@ -1567,6 +1567,32 @@ body[data-page='admin'] {
     background: #eef1f6;
 }
 
+body[data-page='admin'][data-admin='overview'] {
+    background: radial-gradient(circle at 20% 0%, rgba(234, 29, 44, 0.08), transparent 55%),
+        radial-gradient(circle at 80% 20%, rgba(17, 17, 17, 0.08), transparent 55%),
+        #eef1f6;
+}
+
+body[data-page='admin'][data-admin='tracking'] {
+    background: radial-gradient(circle at 20% 0%, rgba(234, 29, 44, 0.12), transparent 55%),
+        #eef1f6;
+}
+
+body[data-page='admin'][data-admin='utmfy'] {
+    background: radial-gradient(circle at 20% 0%, rgba(255, 99, 71, 0.12), transparent 55%),
+        #eef1f6;
+}
+
+body[data-page='admin'][data-admin='pages'] {
+    background: radial-gradient(circle at 20% 0%, rgba(80, 120, 255, 0.12), transparent 55%),
+        #eef1f6;
+}
+
+body[data-page='admin'][data-admin='leads'] {
+    background: radial-gradient(circle at 20% 0%, rgba(0, 150, 136, 0.12), transparent 55%),
+        #eef1f6;
+}
+
 .admin-shell {
     display: grid;
     grid-template-columns: 260px 1fr;
@@ -1660,6 +1686,18 @@ body[data-page='admin'] {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    position: relative;
+}
+
+.admin-main::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 24px;
+    width: 180px;
+    height: 180px;
+    background: radial-gradient(circle, rgba(234, 29, 44, 0.08) 0%, rgba(234, 29, 44, 0) 70%);
+    pointer-events: none;
 }
 
 .admin-topbar {
@@ -1672,6 +1710,22 @@ body[data-page='admin'] {
     gap: 16px;
     box-shadow: var(--shadow-soft);
     border: 1px solid #eceff3;
+}
+
+body[data-page='admin'][data-admin='tracking'] .admin-topbar {
+    border-left: 4px solid #ea1d2c;
+}
+
+body[data-page='admin'][data-admin='utmfy'] .admin-topbar {
+    border-left: 4px solid #ff6b4a;
+}
+
+body[data-page='admin'][data-admin='pages'] .admin-topbar {
+    border-left: 4px solid #4c6fff;
+}
+
+body[data-page='admin'][data-admin='leads'] .admin-topbar {
+    border-left: 4px solid #00a28c;
 }
 
 .admin-topbar h1 {
@@ -1995,6 +2049,43 @@ body[data-page='admin'] {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 12px;
+}
+
+.admin-insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.admin-insight-card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #eceff3;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
+}
+
+.admin-insight-card strong {
+    font-size: 1.1rem;
+    color: #1a1a1a;
+}
+
+.admin-insight-card span {
+    font-size: 0.85rem;
+    color: #6a6a6a;
+}
+
+.admin-insight-pill {
+    align-self: flex-start;
+    background: #f3f4f8;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: #3a3a3a;
 }
 
 .admin-page-card {

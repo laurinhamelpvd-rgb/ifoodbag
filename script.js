@@ -178,6 +178,7 @@ function initHome() {
     btnStart?.addEventListener('click', () => {
         resetFlow();
         setStage('quiz');
+        trackLead('quiz_started', { stage: 'quiz' });
         redirect('quiz.html');
     });
 }
@@ -187,6 +188,7 @@ function initQuiz() {
     if (!currentStage || currentStage === 'quiz' || currentStage === 'personal') {
         setStage('quiz');
     }
+    trackLead('quiz_view', { stage: 'quiz' });
 
     const questionText = document.getElementById('question-text');
     const optionsContainer = document.getElementById('options-container');
@@ -210,6 +212,7 @@ function initQuiz() {
 
 function initPersonal() {
     setStage('personal');
+    trackLead('personal_view', { stage: 'personal' });
     const returnTo = getReturnTarget();
 
     const form = document.getElementById('personal-form');
@@ -298,6 +301,7 @@ function initPersonal() {
 function initCep() {
     if (!requirePersonal()) return;
     setStage('cep');
+    trackLead('cep_view', { stage: 'cep' });
     const returnTo = getReturnTarget();
 
     const cepInput = document.getElementById('cep-input');
@@ -431,6 +435,7 @@ function initProcessing() {
     if (!requireAddress()) return;
 
     setStage('processing');
+    trackLead('processing_view', { stage: 'processing' });
 
     const textEl = document.getElementById('processing-text');
     const videoEl = document.getElementById('vsl-video');
@@ -658,6 +663,7 @@ function initSuccess() {
     if (!requireAddress()) return;
 
     setStage('success');
+    trackLead('success_view', { stage: 'success' });
 
     const personal = loadPersonal();
     const leadName = document.getElementById('lead-name');
@@ -672,6 +678,7 @@ function initSuccess() {
     startTimer(300, timer);
 
     btnCheckout?.addEventListener('click', () => {
+        trackLead('success_cta', { stage: 'success' });
         setStage('checkout');
         redirect('checkout.html');
     });
@@ -682,6 +689,7 @@ function initCheckout() {
     if (!requireAddress()) return;
 
     setStage('checkout');
+    trackLead('checkout_view', { stage: 'checkout' });
     const personal = loadPersonal();
     let address = loadAddress();
     let shipping = loadShipping();
@@ -900,6 +908,7 @@ function initCheckout() {
         saveShipping(opt);
         cachedSelectedId = opt.id;
         shipping = opt;
+        trackLead('frete_selected', { stage: 'checkout', shipping: opt });
         if (shippingTotal) {
             shippingTotal.querySelector('strong').textContent = formatCurrency(opt.price);
             setHidden(shippingTotal, false);
@@ -982,6 +991,7 @@ function initCheckout() {
                 }
                 updateSummaryAddress();
                 updateFreightAddress(updatedAddress);
+                trackLead('frete_calculated', { stage: 'checkout', address: updatedAddress });
                 setHidden(freightDetails, false);
                 setHidden(summaryBlock, true);
                 if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
@@ -1024,6 +1034,7 @@ function initCheckout() {
         setHidden(freightForm, true);
         setHidden(summaryBlock, false);
         showFreightSelection();
+        trackLead('frete_options_shown', { stage: 'checkout' });
         if (cachedOptions) {
             const defaultOpt = cachedOptions.find((opt) => opt.id === 'padrao');
             if (defaultOpt) selectShipping(defaultOpt, cachedOptions);
@@ -1100,6 +1111,7 @@ function initCheckout() {
             showToast('Selecione um frete para continuar.', 'error');
             return;
         }
+        trackLead('checkout_submit', { stage: 'checkout', shipping });
         setStage('orderbump');
         redirect('orderbump.html');
     });
@@ -1117,6 +1129,7 @@ function initOrderBump() {
     }
 
     setStage('orderbump');
+    trackLead('orderbump_view', { stage: 'orderbump', shipping });
     const bumpPrice = 9.9;
 
     const btnAccept = document.getElementById('btn-bump-accept');
@@ -1159,6 +1172,7 @@ function initOrderBump() {
 
 function initPix() {
     const pix = loadPix();
+    const shipping = loadShipping();
     const pixQr = document.getElementById('pix-qr');
     const pixCode = document.getElementById('pix-code');
     const pixAmount = document.getElementById('pix-amount');
@@ -1177,6 +1191,8 @@ function initPix() {
         if (pixCard) pixCard.classList.add('hidden');
         return;
     }
+
+    trackLead('pix_view', { stage: 'pix', shipping });
 
     if (pixAmount) pixAmount.textContent = formatCurrency(pix.amount || 0);
     if (pixBumpRow && pixBumpPrice && pix.bumpPrice) {
@@ -1298,6 +1314,7 @@ function initAdmin() {
     const funnelCepValue = document.getElementById('funnel-cep-value');
     const navItems = document.querySelectorAll('.admin-nav-item');
     const pagesGrid = document.getElementById('pages-grid');
+    const pagesInsights = document.getElementById('pages-insights');
     const adminPage = document.body.getAttribute('data-admin') || '';
     const testPixelBtn = document.getElementById('admin-test-pixel');
     const testPixelStatus = document.getElementById('admin-test-pixel-status');
@@ -1546,6 +1563,28 @@ function initAdmin() {
             `;
             pagesGrid.appendChild(card);
         });
+
+        if (pagesInsights) {
+            const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix'];
+            const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
+            pagesInsights.innerHTML = '';
+            order.forEach((page, index) => {
+                if (!map.has(page)) return;
+                const current = map.get(page);
+                const prev = index > 0 ? (map.get(order[index - 1]) || 0) : current;
+                const conv = prev ? Math.round((current / prev) * 100) : 0;
+                const drop = prev ? Math.max(0, 100 - conv) : 0;
+                const card = document.createElement('div');
+                card.className = 'admin-insight-card';
+                card.innerHTML = `
+                    <span class="admin-insight-pill">${page}</span>
+                    <strong>${conv}%</strong>
+                    <span>Conversao vs etapa anterior</span>
+                    <span>Queda: ${drop}%</span>
+                `;
+                pagesInsights.appendChild(card);
+            });
+        }
     };
 
     loginBtn?.addEventListener('click', async () => {
@@ -1632,9 +1671,11 @@ function handleAnswer(btnElement, option, refs) {
     });
 
     btnElement.classList.add('selected');
+    trackLead('quiz_answer', { stage: 'quiz' });
 
     setTimeout(() => {
         if (option.next === 'personal_step') {
+            trackLead('quiz_complete', { stage: 'quiz' });
             saveQuizComplete();
             setStage('personal');
             redirect('dados.html');
@@ -2072,20 +2113,64 @@ function firePixelEvent(eventName, data = {}) {
     } catch (_error) {}
 }
 
+function normalizePixelName(name) {
+    return String(name || '')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
+function firePixelCustom(eventName, data = {}) {
+    if (!window.fbq) return;
+    const safe = normalizePixelName(eventName);
+    if (!safe) return;
+    try {
+        window.fbq('trackCustom', safe, data);
+    } catch (_error) {}
+}
+
 function maybeTrackPixel(eventName, payload = {}) {
     const pixel = state.pixelConfig;
     if (!pixel || !pixel.enabled || !pixel.id) return;
 
+    const amount = Number(payload.amount || payload.pix?.amount || payload.pixAmount || 0);
+    const shipping = payload.shipping || {};
+
     if (eventName === 'personal_submitted' && pixel.events?.lead !== false) {
         firePixelEvent('Lead');
+        firePixelEvent('CompleteRegistration');
+    }
+
+    if (eventName === 'checkout_view') {
+        firePixelEvent('InitiateCheckout', { currency: 'BRL' });
+    }
+
+    if (eventName === 'frete_selected') {
+        firePixelEvent('AddPaymentInfo', {
+            value: Number(shipping.price || 0),
+            currency: 'BRL'
+        });
+    }
+
+    if (eventName === 'orderbump_accepted') {
+        firePixelEvent('AddToCart', {
+            value: Number(payload.bump?.price || payload.bumpPrice || 0),
+            currency: 'BRL'
+        });
     }
 
     if (eventName === 'pix_created_front' && pixel.events?.purchase !== false) {
         firePixelEvent('Purchase', {
-            value: Number(payload.amount || 0),
+            value: Number(amount || 0),
             currency: 'BRL'
         });
     }
+
+    firePixelCustom(eventName, {
+        value: Number(amount || 0),
+        currency: 'BRL',
+        stage: payload.stage || ''
+    });
 }
 
 function trackLead(eventName, extra = {}) {
@@ -2095,6 +2180,7 @@ function trackLead(eventName, extra = {}) {
         sessionId: getLeadSessionId(),
         event: eventName,
         stage: extra.stage || getStage() || '',
+        page: document.body.dataset.page || '',
         sourceUrl: window.location.href,
         utm: getUtmData(),
         personal: extra.personal || loadPersonal() || {},
