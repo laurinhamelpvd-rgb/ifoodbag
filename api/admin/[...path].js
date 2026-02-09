@@ -2,7 +2,7 @@ const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin } = require('../../lib/admin-auth');
 const { getSettings, saveSettings, defaultSettings } = require('../../lib/settings-store');
 const { sendUtmfy } = require('../../lib/utmfy');
-const { updateLeadByPixTxid } = require('../../lib/lead-store');
+const { updateLeadByPixTxid, getLeadByPixTxid } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
 const { BASE_URL, fetchJson, authHeaders } = require('../../lib/ativus');
 const { getAtivusStatus, isAtivusPaidStatus, isAtivusPendingStatus } = require('../../lib/ativus-status');
@@ -245,7 +245,7 @@ async function utmfyTest(req, res) {
     }
     if (!requireAdmin(req, res)) return;
 
-    const result = await sendUtmfy('checkout', {
+    const result = await sendUtmfy('pix_created', {
         source: 'admin_test',
         sessionId: `admin-${Date.now()}`,
         amount: 19.9,
@@ -298,7 +298,7 @@ async function utmfySale(req, res) {
         }
     };
 
-    const result = await sendUtmfy('purchase', payload);
+    const result = await sendUtmfy('pix_confirmed', payload);
 
     if (!result.ok) {
         res.status(400).json({ error: 'Falha ao enviar venda.', detail: result });
@@ -419,6 +419,8 @@ async function pixReconcile(req, res) {
             if (isAtivusPaidStatus(status)) {
                 confirmed += 1;
                 const up = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false }));
+                const lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+                const leadData = lead?.ok ? lead.data : null;
                 const changedRows = up?.ok ? Number(up?.count || 0) : 0;
                 if (changedRows > 0) {
                     updated += changedRows;
@@ -433,14 +435,93 @@ async function pixReconcile(req, res) {
                         channel: 'utmfy',
                         eventName: 'pix_confirmed',
                         dedupeKey: `utmfy:pix_confirmed:${txid}`,
-                        payload: { event: 'pix_confirmed', txid, status, amount, payload: data }
+                        payload: {
+                            event: 'pix_confirmed',
+                            orderId: leadData?.session_id || '',
+                            txid,
+                            status,
+                            amount,
+                            personal: leadData ? {
+                                name: leadData.name,
+                                email: leadData.email,
+                                cpf: leadData.cpf,
+                                phoneDigits: leadData.phone
+                            } : null,
+                            address: leadData ? {
+                                street: leadData.address_line,
+                                neighborhood: leadData.neighborhood,
+                                city: leadData.city,
+                                state: leadData.state,
+                                cep: leadData.cep
+                            } : null,
+                            shipping: leadData ? {
+                                id: leadData.shipping_id,
+                                name: leadData.shipping_name,
+                                price: leadData.shipping_price
+                            } : null,
+                            bump: leadData && leadData.bump_selected ? {
+                                title: 'Seguro Bag',
+                                price: leadData.bump_price
+                            } : null,
+                            utm: leadData ? {
+                                utm_source: leadData.utm_source,
+                                utm_medium: leadData.utm_medium,
+                                utm_campaign: leadData.utm_campaign,
+                                utm_term: leadData.utm_term,
+                                utm_content: leadData.utm_content,
+                                gclid: leadData.gclid,
+                                fbclid: leadData.fbclid,
+                                ttclid: leadData.ttclid
+                            } : null,
+                            payload: data
+                        }
                     }).then(() => processDispatchQueue(8)).catch(() => null);
 
                     enqueueDispatch({
                         channel: 'utmfy',
                         eventName: 'purchase',
                         dedupeKey: `utmfy:purchase:${txid}`,
-                        payload: { event: 'purchase', txid, status, amount, currency: 'BRL', payload: data }
+                        payload: {
+                            event: 'purchase',
+                            orderId: leadData?.session_id || '',
+                            txid,
+                            status,
+                            amount,
+                            currency: 'BRL',
+                            personal: leadData ? {
+                                name: leadData.name,
+                                email: leadData.email,
+                                cpf: leadData.cpf,
+                                phoneDigits: leadData.phone
+                            } : null,
+                            address: leadData ? {
+                                street: leadData.address_line,
+                                neighborhood: leadData.neighborhood,
+                                city: leadData.city,
+                                state: leadData.state,
+                                cep: leadData.cep
+                            } : null,
+                            shipping: leadData ? {
+                                id: leadData.shipping_id,
+                                name: leadData.shipping_name,
+                                price: leadData.shipping_price
+                            } : null,
+                            bump: leadData && leadData.bump_selected ? {
+                                title: 'Seguro Bag',
+                                price: leadData.bump_price
+                            } : null,
+                            utm: leadData ? {
+                                utm_source: leadData.utm_source,
+                                utm_medium: leadData.utm_medium,
+                                utm_campaign: leadData.utm_campaign,
+                                utm_term: leadData.utm_term,
+                                utm_content: leadData.utm_content,
+                                gclid: leadData.gclid,
+                                fbclid: leadData.fbclid,
+                                ttclid: leadData.ttclid
+                            } : null,
+                            payload: data
+                        }
                     }).then(() => processDispatchQueue(8)).catch(() => null);
 
                     enqueueDispatch({

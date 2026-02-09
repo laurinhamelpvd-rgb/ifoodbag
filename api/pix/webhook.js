@@ -1,5 +1,5 @@
 const { WEBHOOK_TOKEN } = require('../../lib/ativus');
-const { updateLeadByPixTxid } = require('../../lib/lead-store');
+const { updateLeadByPixTxid, getLeadByPixTxid } = require('../../lib/lead-store');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 const { getAtivusTxid, getAtivusStatus, isAtivusPaidStatus } = require('../../lib/ativus-status');
 
@@ -27,6 +27,8 @@ module.exports = async (req, res) => {
 
     if (txid && isPaid) {
         const update = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+        const lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+        const leadData = lead?.ok ? lead.data : null;
         if (update?.ok && Number(update.count || 0) > 0) {
             const amount = Number(body?.amount || body?.deposito_liquido || body?.cash_out_liquido || 0);
             const clientIp = req?.headers?.['x-forwarded-for']
@@ -40,10 +42,45 @@ module.exports = async (req, res) => {
                 dedupeKey: `utmfy:pix_confirmed:${txid}`,
                 payload: {
                 event: 'pix_confirmed',
+                orderId: leadData?.session_id || '',
                 txid,
                 status: statusRaw || 'confirmed',
                 amount,
-                payload: body
+                personal: leadData ? {
+                    name: leadData.name,
+                    email: leadData.email,
+                    cpf: leadData.cpf,
+                    phoneDigits: leadData.phone
+                } : null,
+                address: leadData ? {
+                    street: leadData.address_line,
+                    neighborhood: leadData.neighborhood,
+                    city: leadData.city,
+                    state: leadData.state,
+                    cep: leadData.cep
+                } : null,
+                shipping: leadData ? {
+                    id: leadData.shipping_id,
+                    name: leadData.shipping_name,
+                    price: leadData.shipping_price
+                } : null,
+                bump: leadData && leadData.bump_selected ? {
+                    title: 'Seguro Bag',
+                    price: leadData.bump_price
+                } : null,
+                utm: leadData ? {
+                    utm_source: leadData.utm_source,
+                    utm_medium: leadData.utm_medium,
+                    utm_campaign: leadData.utm_campaign,
+                    utm_term: leadData.utm_term,
+                    utm_content: leadData.utm_content,
+                    gclid: leadData.gclid,
+                    fbclid: leadData.fbclid,
+                    ttclid: leadData.ttclid
+                } : null,
+                payload: body,
+                client_ip: clientIp,
+                user_agent: userAgent
                 }
             }).then(() => processDispatchQueue(10)).catch(() => null);
 
@@ -53,11 +90,46 @@ module.exports = async (req, res) => {
                 dedupeKey: `utmfy:purchase:${txid}`,
                 payload: {
                 event: 'purchase',
+                orderId: leadData?.session_id || '',
                 txid,
                 status: statusRaw || 'confirmed',
                 amount,
                 currency: 'BRL',
-                payload: body
+                personal: leadData ? {
+                    name: leadData.name,
+                    email: leadData.email,
+                    cpf: leadData.cpf,
+                    phoneDigits: leadData.phone
+                } : null,
+                address: leadData ? {
+                    street: leadData.address_line,
+                    neighborhood: leadData.neighborhood,
+                    city: leadData.city,
+                    state: leadData.state,
+                    cep: leadData.cep
+                } : null,
+                shipping: leadData ? {
+                    id: leadData.shipping_id,
+                    name: leadData.shipping_name,
+                    price: leadData.shipping_price
+                } : null,
+                bump: leadData && leadData.bump_selected ? {
+                    title: 'Seguro Bag',
+                    price: leadData.bump_price
+                } : null,
+                utm: leadData ? {
+                    utm_source: leadData.utm_source,
+                    utm_medium: leadData.utm_medium,
+                    utm_campaign: leadData.utm_campaign,
+                    utm_term: leadData.utm_term,
+                    utm_content: leadData.utm_content,
+                    gclid: leadData.gclid,
+                    fbclid: leadData.fbclid,
+                    ttclid: leadData.ttclid
+                } : null,
+                payload: body,
+                client_ip: clientIp,
+                user_agent: userAgent
                 }
             }).then(() => processDispatchQueue(10)).catch(() => null);
 

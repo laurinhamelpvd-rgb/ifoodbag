@@ -2238,6 +2238,8 @@ function captureUtmParams() {
     const params = new URLSearchParams(window.location.search);
     const current = getUtmData();
     const updated = {
+        src: params.get('src') || current.src,
+        sck: params.get('sck') || current.sck,
         utm_source: params.get('utm_source') || current.utm_source,
         utm_medium: params.get('utm_medium') || current.utm_medium,
         utm_campaign: params.get('utm_campaign') || current.utm_campaign,

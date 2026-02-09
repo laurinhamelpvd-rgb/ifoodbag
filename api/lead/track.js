@@ -50,18 +50,14 @@ module.exports = async (req, res) => {
             raw: body
         };
 
-        const eventMap = {
-            checkout_submit: 'checkout',
-            personal_submitted: 'lead',
-            quiz_complete: 'quiz_complete',
-            quiz_started: 'quiz_start'
-        };
-        const utmfyEvent = eventMap[fullPayload.event] || '';
-        if (utmfyEvent) {
+        if (fullPayload.event === 'checkout_submit') {
             enqueueDispatch({
                 channel: 'utmfy',
-                eventName: utmfyEvent,
-                payload: fullPayload
+                eventName: 'checkout',
+                payload: {
+                    ...fullPayload,
+                    orderId: fullPayload.sessionId || ''
+                }
             }).then(() => processDispatchQueue(12)).catch(() => null);
         }
 

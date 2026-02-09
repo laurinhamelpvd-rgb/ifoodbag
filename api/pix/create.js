@@ -173,13 +173,15 @@ module.exports = async (req, res) => {
             eventName: 'pix_created',
             dedupeKey: txid ? `utmfy:pix_created:${txid}` : null,
             payload: {
+                orderId: rawBody.sessionId || '',
                 amount: totalAmount,
                 sessionId: rawBody.sessionId || '',
                 personal,
                 shipping,
                 bump,
                 utm: rawBody.utm || {},
-                txid
+                txid,
+                createdAt: Date.now()
             }
         }).then(() => processDispatchQueue(8)).catch(() => null);
 

@@ -31,29 +31,7 @@ module.exports = async (req, res) => {
         return;
     }
 
-    const forwarded = req.headers['x-forwarded-for'];
-    const clientIp = typeof forwarded === 'string' && forwarded
-        ? forwarded.split(',')[0].trim()
-        : req.socket?.remoteAddress || '';
-
-    enqueueDispatch({
-        channel: 'utmfy',
-        eventName: 'page_view',
-        dedupeKey: `pageview:${body.sessionId || ''}:${body.page || ''}`,
-        payload: {
-        event: 'page_view',
-        page: body.page || '',
-        sessionId: body.sessionId || '',
-        sourceUrl: body.sourceUrl || '',
-        utm: body.utm || {},
-        metadata: {
-            received_at: new Date().toISOString(),
-            user_agent: req.headers['user-agent'] || '',
-            referrer: req.headers['referer'] || '',
-            client_ip: clientIp
-        }
-        }
-    }).then(() => processDispatchQueue(8)).catch(() => null);
+    // UTMfy events are sent only on key conversion moments (checkout/pix).
 
     res.status(200).json({ ok: true });
 };
