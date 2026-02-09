@@ -1,4 +1,4 @@
-ï»¿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
@@ -14,7 +14,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=3.0">
-</head>
+<script
+  src="https://cdn.utmify.com.br/scripts/utms/latest.js"
+  data-utmify-prevent-xcod-sck
+  data-utmify-prevent-subids
+  async
+  defer
+></script>
+
+<script>
+        window.pixelId = "69879d3cc070d5501c7e3fde";
+        var a = document.createElement("script");
+        a.setAttribute("async", "");
+        a.setAttribute("defer", "");
+        a.setAttribute("src", "https://cdn.utmify.com.br/scripts/pixel/pixel.js");
+        document.head.appendChild(a);
+    </script><script async="" defer="" src="js/pixel.js"></script></head>
 
 <body data-page="checkout">
     
@@ -57,7 +72,7 @@
 
                 <div class="summary-card">
                     <div class="summary-row">
-                        <span>EndereÃ§o</span>
+                        <span>Endereço</span>
                         <strong id="summary-address">-</strong>
                     </div>
                     <div class="summary-row">
@@ -82,7 +97,7 @@
                     </div>
                     <div id="freight-address" class="freight-address hidden" aria-hidden="true">
                         <div class="freight-address__header">
-                            <span class="freight-address__title">ENDEREÃ‡O</span>
+                            <span class="freight-address__title">ENDEREÇO</span>
                             <button class="freight-address__edit" id="btn-edit-cep" type="button"
                                 aria-label="Editar CEP">
                                 <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
@@ -92,17 +107,17 @@
                                 </svg>
                             </button>
                         </div>
-                        <div id="freight-street" class="freight-address__street">â€”</div>
-                        <div id="freight-city" class="freight-address__city">â€”</div>
+                        <div id="freight-street" class="freight-address__street">—</div>
+                        <div id="freight-city" class="freight-address__city">—</div>
                     </div>
                     <div id="freight-details" class="freight-details hidden" aria-hidden="true">
                         <div class="input-group">
                             <input type="text" id="addr-number" class="floating-input" placeholder=" ">
-                            <label for="addr-number" class="floating-label">NÃºmero *</label>
+                            <label for="addr-number" class="floating-label">Número *</label>
                         </div>
                         <label class="checkline">
                             <input type="checkbox" id="no-number">
-                            <span>EndereÃ§o sem nÃºmero</span>
+                            <span>Endereço sem número</span>
                         </label>
 
                         <div class="input-group">
@@ -111,12 +126,12 @@
                         </div>
                         <label class="checkline">
                             <input type="checkbox" id="no-complement">
-                            <span>EndereÃ§o sem complemento</span>
+                            <span>Endereço sem complemento</span>
                         </label>
 
                         <div class="input-group">
                             <input type="text" id="addr-reference" class="floating-input" placeholder=" ">
-                            <label for="addr-reference" class="floating-label">Ponto de referÃªncia (opcional)</label>
+                            <label for="addr-reference" class="floating-label">Ponto de referência (opcional)</label>
                         </div>
 
                         <button id="btn-verify-freight" class="btn-primary" type="button">
@@ -128,17 +143,17 @@
                 <div id="freight-hint" class="freight-hint hidden" aria-hidden="true">Selecione o frete abaixo</div>
                 <div id="freight-options" class="freight-options hidden" aria-hidden="true"></div>
                 <div id="shipping-total" class="summary-total hidden" aria-hidden="true">
-                    Taxa de envio: <strong>â€”</strong>
+                    Taxa de envio: <strong>—</strong>
                 </div>
             </div>
 
             <div class="action-stack">
                 <button id="btn-finish" class="btn-primary hidden" type="button">Finalizar Pedido</button>
                 <a class="btn-secondary" href="dados?return=checkout">Editar dados</a>
-                <a class="btn-secondary" href="endereco?return=checkout">Editar endereÃ§o</a>
+                <a class="btn-secondary" href="endereco?return=checkout">Editar endereço</a>
             </div>
 
-            <p class="small-text">* O pagamento do frete Ã© processado em ambiente seguro.</p>
+            <p class="small-text">* O pagamento do frete é processado em ambiente seguro.</p>
         </section>
     </main>
 

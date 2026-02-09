@@ -245,9 +245,23 @@ async function utmfyTest(req, res) {
     }
     if (!requireAdmin(req, res)) return;
 
-    const result = await sendUtmfy('admin_test', {
-        source: 'admin',
-        timestamp: new Date().toISOString()
+    const result = await sendUtmfy('checkout', {
+        source: 'admin_test',
+        sessionId: `admin-${Date.now()}`,
+        amount: 19.9,
+        personal: {
+            name: 'Teste Admin',
+            email: 'teste@local.dev'
+        },
+        shipping: {
+            name: 'Envio Padrao iFood',
+            price: 19.9
+        },
+        utm: {
+            utm_source: 'admin_test',
+            utm_medium: 'dashboard',
+            utm_campaign: 'utmfy_test'
+        }
     });
 
     if (!result.ok) {
@@ -267,12 +281,21 @@ async function utmfySale(req, res) {
 
     const amount = 56.1;
     const payload = {
-        event: 'purchase',
         amount,
-        currency: 'BRL',
-        order_id: `manual-${Date.now()}`,
-        source: 'admin_manual',
-        created_at: new Date().toISOString()
+        sessionId: `manual-${Date.now()}`,
+        personal: {
+            name: 'Compra Manual',
+            email: 'manual@local.dev'
+        },
+        shipping: {
+            name: 'Envio Padrao iFood',
+            price: amount
+        },
+        utm: {
+            utm_source: 'admin_manual',
+            utm_medium: 'dashboard',
+            utm_campaign: 'manual_sale'
+        }
     };
 
     const result = await sendUtmfy('purchase', payload);

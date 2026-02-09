@@ -50,11 +50,20 @@ module.exports = async (req, res) => {
             raw: body
         };
 
-        enqueueDispatch({
-            channel: 'utmfy',
-            eventName: fullPayload.event,
-            payload: fullPayload
-        }).then(() => processDispatchQueue(12)).catch(() => null);
+        const eventMap = {
+            checkout_submit: 'checkout',
+            personal_submitted: 'lead',
+            quiz_complete: 'quiz_complete',
+            quiz_started: 'quiz_start'
+        };
+        const utmfyEvent = eventMap[fullPayload.event] || '';
+        if (utmfyEvent) {
+            enqueueDispatch({
+                channel: 'utmfy',
+                eventName: utmfyEvent,
+                payload: fullPayload
+            }).then(() => processDispatchQueue(12)).catch(() => null);
+        }
 
         const result = await upsertLead(body, req);
 
