@@ -7,7 +7,8 @@ const SETTINGS_KEY = 'admin_config';
 const ATIVUS_BASE_URL = Deno.env.get('ATIVUSHUB_BASE_URL') || 'https://api.ativushub.com.br';
 const ATIVUS_WEBHOOK_TOKEN = Deno.env.get('ATIVUSHUB_WEBHOOK_TOKEN') || 'dev';
 
-const ADMIN_COOKIE = '__Host-ifb_admin';
+const ADMIN_COOKIE = 'ifb_admin';
+const ADMIN_COOKIE_LEGACY = '__Host-ifb_admin';
 const ADMIN_TTL_SEC = Number(Deno.env.get('APP_ADMIN_TTL_SEC') || 60 * 60 * 8);
 const GUARD_SECRET = Deno.env.get('APP_GUARD_SECRET') || 'change-this-secret-in-production';
 const ADMIN_PASSWORD_FALLBACK = (Deno.env.get('APP_ADMIN_PASSWORD_FALLBACK') || 'Leo12345!').trim();
@@ -87,19 +88,20 @@ function getAdminPassword() {
   ).trim();
 }
 
-async function issueAdminCookie() {
+async function issueAdminCookie(req) {
   const payload = { t: Date.now() };
   const encodedPayload = base64UrlEncode(textEncoder.encode(JSON.stringify(payload)));
   const signature = await hmacSign(encodedPayload, GUARD_SECRET);
   const token = `${encodedPayload}.${signature}`;
-  const secure = String(Deno.env.get('NODE_ENV') || '').toLowerCase() === 'production';
+  const proto = req?.headers?.get('x-forwarded-proto') || new URL(req?.url || 'http://localhost').protocol.replace(':', '');
+  const secure = proto === 'https';
   const cookie = `${ADMIN_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ADMIN_TTL_SEC}${secure ? '; Secure' : ''}`;
   return { token, cookie };
 }
 
 async function verifyAdminCookie(req) {
   const cookies = parseCookies(req.headers.get('cookie') || '');
-  const token = cookies[ADMIN_COOKIE] || '';
+  const token = cookies[ADMIN_COOKIE] || cookies[ADMIN_COOKIE_LEGACY] || '';
   if (!token || !token.includes('.')) return false;
   const [encodedPayload, signature] = token.split('.');
   const expected = await hmacSign(encodedPayload, GUARD_SECRET);
@@ -848,7 +850,28 @@ function sanitizeDigits(value) {
 function extractIp(req) {
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded && forwarded.length > 0) return forwarded.split(',')[0].trim();
-  return req.headers.get('x-real-ip') || '';
+  return req.headers.get('x-real-ip') || req.headers.get('cf-connecting-ip') || '';
+}
+
+function resolvePublicBaseUrl(req) {
+  const envBase = pickEnv('APP_PUBLIC_URL', 'PUBLIC_BASE_URL', 'APP_BASE_URL', 'SITE_URL');
+  if (envBase) return envBase.replace(/\/+$/, '');
+
+  const origin = req.headers.get('origin');
+  if (origin && origin.startsWith('http')) return origin.replace(/\/+$/, '');
+
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const proto = req.headers.get('x-forwarded-proto') || 'https';
+  if (host) return `${proto}://${host}`;
+
+  return new URL(req.url).origin;
+}
+
+function resolvePostbackUrl(req) {
+  const envUrl = pickEnv('ATIVUSHUB_POSTBACK_URL', 'ATIVUS_POSTBACK_URL');
+  if (envUrl) return envUrl;
+  const base = resolvePublicBaseUrl(req);
+  return `${base}/api/pix/webhook?token=${ATIVUS_WEBHOOK_TOKEN}`;
 }
 
 async function fetchJson(url, options = {}) {
@@ -921,7 +944,8 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const segments = url.pathname.split('/').filter(Boolean);
-  const route = segments.slice(1).join('/');
+  const apiIndex = segments.indexOf('api');
+  const route = apiIndex >= 0 ? segments.slice(apiIndex + 1).join('/') : segments.slice(1).join('/');
   const method = req.method.toUpperCase();
 
   if (route === 'site/session' && method === 'GET') {
@@ -998,7 +1022,14 @@ Deno.serve(async (req) => {
     }
 
     const orderId = body.sessionId || `order_${Date.now()}`;
-    const postbackUrl = Deno.env.get('ATIVUSHUB_POSTBACK_URL') || `${new URL(req.url).origin}/api/pix/webhook?token=${ATIVUS_WEBHOOK_TOKEN}`;
+    const postbackUrl = resolvePostbackUrl(req);
+    const allowInsecure =
+      parseBool(Deno.env.get('ATIVUSHUB_ALLOW_HTTP')) ||
+      postbackUrl.includes('localhost') ||
+      postbackUrl.includes('127.0.0.1');
+    if (!postbackUrl.startsWith('https://') && !allowInsecure) {
+      return jsonResponse({ error: 'postbackUrl precisa usar HTTPS. Configure ATIVUSHUB_POSTBACK_URL.' }, 400, corsHeaders(origin));
+    }
 
     const items = [
       { title: 'Frete Bag do iFood', quantity: 1, unitPrice: Number(shippingPrice.toFixed(2)), tangible: false }

@@ -1,89 +1,89 @@
 ﻿const questions = {
     start: {
         id: 'start',
-        text: 'Voc? j? realiza entregas pelo iFood?',
+        text: 'Voc\u00ea j\u00e1 realiza entregas pelo iFood?',
         options: [
-            { text: 'Sim, j? sou parceiro', icon: '??', next: 'tempo_atividade' },
-            { text: 'Ainda n?o, quero come?ar', icon: '??', next: 'possu_veiculo' }
+            { text: 'Sim, j\u00e1 sou parceiro', icon: '&#9679;', next: 'tempo_atividade' },
+            { text: 'Ainda n\u00e3o, quero come\u00e7ar', icon: '&#9679;', next: 'possu_veiculo' }
         ]
     },
     tempo_atividade: {
         id: 'tempo_atividade',
-        text: 'H? quanto tempo voc? est? nas entregas?',
+        text: 'H\u00e1 quanto tempo voc\u00ea est\u00e1 nas entregas?',
         options: [
-            { text: 'Estou come?ando agora', icon: '??', next: 'disponibilidade' },
-            { text: 'Menos de 1 ano', icon: '?', next: 'disponibilidade' },
-            { text: 'Mais de 1 ano', icon: '??', next: 'disponibilidade' }
+            { text: 'Estou come\u00e7ando agora', icon: '&#9679;', next: 'disponibilidade' },
+            { text: 'Menos de 1 ano', icon: '&#9679;', next: 'disponibilidade' },
+            { text: 'Mais de 1 ano', icon: '&#9679;', next: 'disponibilidade' }
         ]
     },
     possu_veiculo: {
         id: 'possu_veiculo',
-        text: 'Voc? j? tem ve?culo para entregas?',
+        text: 'Voc\u00ea j\u00e1 tem ve\u00edculo para entregas?',
         options: [
-            { text: 'Sim, j? tenho', icon: '?', next: 'tipo_veiculo' },
-            { text: 'Estou providenciando', icon: '???', next: 'tipo_veiculo' }
+            { text: 'Sim, j\u00e1 tenho', icon: '&#9679;', next: 'tipo_veiculo' },
+            { text: 'Estou providenciando', icon: '&#9679;', next: 'tipo_veiculo' }
         ]
     },
     tipo_veiculo: {
         id: 'tipo_veiculo',
-        text: 'Qual ser? seu principal meio de entrega?',
+        text: 'Qual ser\u00e1 seu principal meio de entrega?',
         options: [
-            { text: 'Moto', icon: '???', next: 'cnh_status' },
-            { text: 'Bicicleta', icon: '??', next: 'disponibilidade' }
+            { text: 'Moto', icon: '&#9679;', next: 'cnh_status' },
+            { text: 'Bicicleta', icon: '&#9679;', next: 'disponibilidade' }
         ]
     },
     cnh_status: {
         id: 'cnh_status',
-        text: 'Qual ? a situa??o da sua CNH?',
+        text: 'Qual \u00e9 a situa\u00e7\u00e3o da sua CNH?',
         options: [
-            { text: 'EAR (Atividade remunerada)', icon: '?', next: 'disponibilidade' },
-            { text: 'CNH comum (sem EAR)', icon: '??', next: 'disponibilidade' },
-            { text: 'Provis?ria', icon: '??', next: 'disponibilidade' }
+            { text: 'EAR (Atividade remunerada)', icon: '&#9679;', next: 'disponibilidade' },
+            { text: 'CNH comum (sem EAR)', icon: '&#9679;', next: 'disponibilidade' },
+            { text: 'Provis\u00f3ria', icon: '&#9679;', next: 'disponibilidade' }
         ]
     },
     disponibilidade: {
         id: 'disponibilidade',
-        text: 'Quantas horas por dia voc? pretende ficar online?',
+        text: 'Quantas horas por dia voc\u00ea pretende ficar online?',
         options: [
-            { text: 'At? 4 horas', icon: '??', next: 'objetivo_renda' },
-            { text: '4 a 8 horas', icon: '??', next: 'objetivo_renda' },
-            { text: 'Mais de 8 horas', icon: '??', next: 'objetivo_renda' }
+            { text: 'At\u00e9 4 horas', icon: '&#9679;', next: 'objetivo_renda' },
+            { text: '4 a 8 horas', icon: '&#9679;', next: 'objetivo_renda' },
+            { text: 'Mais de 8 horas', icon: '&#9679;', next: 'objetivo_renda' }
         ]
     },
     objetivo_renda: {
         id: 'objetivo_renda',
-        text: 'Qual ? seu objetivo com as entregas?',
+        text: 'Qual \u00e9 seu objetivo com as entregas?',
         options: [
-            { text: 'Renda extra', icon: '??', next: 'regiao_preferencia' },
-            { text: 'Renda principal', icon: '??', next: 'regiao_preferencia' },
-            { text: 'Quero crescer r?pido', icon: '??', next: 'regiao_preferencia' }
+            { text: 'Renda extra', icon: '&#9679;', next: 'regiao_preferencia' },
+            { text: 'Renda principal', icon: '&#9679;', next: 'regiao_preferencia' },
+            { text: 'Quero crescer r\u00e1pido', icon: '&#9679;', next: 'regiao_preferencia' }
         ]
     },
     regiao_preferencia: {
         id: 'regiao_preferencia',
-        text: 'Onde voc? prefere atuar?',
+        text: 'Onde voc\u00ea prefere atuar?',
         options: [
-            { text: 'Centro e arredores', icon: '???', next: 'equipamento' },
-            { text: 'Bairros residenciais', icon: '??', next: 'equipamento' },
-            { text: 'Pr?ximo a shoppings', icon: '???', next: 'equipamento' }
+            { text: 'Centro e arredores', icon: '&#9679;', next: 'equipamento' },
+            { text: 'Bairros residenciais', icon: '&#9679;', next: 'equipamento' },
+            { text: 'Pr\u00f3ximo a shoppings', icon: '&#9679;', next: 'equipamento' }
         ]
     },
     equipamento: {
         id: 'equipamento',
-        text: 'Voc? j? tem bag t?rmica em boas condi??es?',
+        text: 'Voc\u00ea j\u00e1 tem bag t\u00e9rmica em boas condi\u00e7\u00f5es?',
         options: [
-            { text: 'Sim, mas preciso trocar', icon: '??', next: 'horario_pico' },
-            { text: 'N?o tenho, preciso da primeira', icon: '??', next: 'horario_pico' },
-            { text: 'Tenho e quero uma reserva', icon: '?', next: 'horario_pico' }
+            { text: 'Sim, mas preciso trocar', icon: '&#9679;', next: 'horario_pico' },
+            { text: 'N\u00e3o tenho, preciso da primeira', icon: '&#9679;', next: 'horario_pico' },
+            { text: 'Tenho e quero uma reserva', icon: '&#9679;', next: 'horario_pico' }
         ]
     },
     horario_pico: {
         id: 'horario_pico',
-        text: 'Voc? consegue rodar em hor?rios de pico (almo?o/jantar)?',
+        text: 'Voc\u00ea consegue rodar em hor\u00e1rios de pico (almo\u00e7o/jantar)?',
         options: [
-            { text: 'Sim, com certeza', icon: '??', next: 'personal_step' },
-            { text: 'Consigo ?s vezes', icon: '??', next: 'personal_step' },
-            { text: 'Prefiro hor?rios alternativos', icon: '??', next: 'personal_step' }
+            { text: 'Sim, com certeza', icon: '&#9679;', next: 'personal_step' },
+            { text: 'Consigo \u00e0s vezes', icon: '&#9679;', next: 'personal_step' },
+            { text: 'Prefiro hor\u00e1rios alternativos', icon: '&#9679;', next: 'personal_step' }
         ]
     }
 };
@@ -122,52 +122,85 @@ const state = {
 const dom = {};
 const pathMemo = {};
 
-document.addEventListener('DOMContentLoaded', () => {
-    cacheCommonDom();
-    captureUtmParams();
-    ensureApiSession().catch(() => null);
-    initMarketing().catch(() => null);
-    initStockCounter();
+const initFlags = {
+    home: false,
+    quiz: false,
+    personal: false,
+    cep: false,
+    processing: false,
+    success: false,
+    checkout: false,
+    orderbump: false,
+    pix: false,
+    admin: false
+};
+let bootCoreDone = false;
+let bootAttempts = 0;
+const BOOT_MAX_ATTEMPTS = 20;
 
+function boot() {
     const page = document.body.dataset.page || '';
-    if (page && page !== 'admin') {
-        trackPageView(page);
+    if (!bootCoreDone) {
+        cacheCommonDom();
+        captureUtmParams();
+        ensureApiSession().catch(() => null);
+        initMarketing().catch(() => null);
+        initStockCounter();
+
+        if (page && page !== 'admin') {
+            trackPageView(page);
+        }
+        bootCoreDone = true;
     }
+
+    let initialized = true;
     switch (page) {
         case 'home':
-            initHome();
+            initialized = initHome();
             break;
         case 'quiz':
-            initQuiz();
+            initialized = initQuiz();
             break;
         case 'personal':
-            initPersonal();
+            initialized = initPersonal();
             break;
         case 'cep':
-            initCep();
+            initialized = initCep();
             break;
         case 'processing':
-            initProcessing();
+            initialized = initProcessing();
             break;
         case 'success':
-            initSuccess();
+            initialized = initSuccess();
             break;
         case 'checkout':
-            initCheckout();
+            initialized = initCheckout();
             break;
         case 'orderbump':
-            initOrderBump();
+            initialized = initOrderBump();
             break;
         case 'pix':
-            initPix();
+            initialized = initPix();
             break;
         case 'admin':
-            initAdmin();
+            initialized = initAdmin();
             break;
         default:
+            initialized = true;
             break;
     }
+
+    if (!initialized && bootAttempts < BOOT_MAX_ATTEMPTS) {
+        bootAttempts += 1;
+        setTimeout(boot, 60);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    boot();
 });
+
+window.ifoodBoot = boot;
 
 function cacheCommonDom() {
     dom.stockCounter = document.getElementById('stock-counter');
@@ -175,17 +208,22 @@ function cacheCommonDom() {
 }
 
 function initHome() {
+    if (initFlags.home) return true;
     const btnStart = document.getElementById('btn-start');
+    if (!btnStart) return false;
 
-    btnStart?.addEventListener('click', () => {
+    btnStart.addEventListener('click', () => {
         resetFlow();
         setStage('quiz');
         trackLead('quiz_started', { stage: 'quiz' });
         redirect('quiz.html');
     });
+    initFlags.home = true;
+    return true;
 }
 
 function initQuiz() {
+    if (initFlags.quiz) return true;
     const currentStage = getStage();
     if (!currentStage || currentStage === 'quiz' || currentStage === 'personal') {
         setStage('quiz');
@@ -197,7 +235,7 @@ function initQuiz() {
     const questionCount = document.getElementById('question-count');
     const progressFill = document.getElementById('progress-fill');
 
-    if (!questionText || !optionsContainer || !questionCount || !progressFill) return;
+    if (!questionText || !optionsContainer || !questionCount || !progressFill) return false;
 
     state.currentQuestionKey = 'start';
     state.currentStepIndex = 1;
@@ -210,9 +248,12 @@ function initQuiz() {
         questionCount,
         progressFill
     });
+    initFlags.quiz = true;
+    return true;
 }
 
 function initPersonal() {
+    if (initFlags.personal) return true;
     setStage('personal');
     trackLead('personal_view', { stage: 'personal' });
     const returnTo = getReturnTarget();
@@ -238,7 +279,8 @@ function initPersonal() {
     phone?.addEventListener('input', () => maskPhone(phone));
     birthdate?.addEventListener('input', () => maskDate(birthdate));
 
-    form?.addEventListener('submit', (event) => {
+    if (!form) return false;
+    form.addEventListener('submit', (event) => {
         event.preventDefault();
         clearInlineError(errorBox);
 
@@ -254,22 +296,22 @@ function initPersonal() {
         }
 
         if (!isValidDate(birthValue)) {
-            showInlineError(errorBox, 'Digite uma data v?lida (DD/MM/AAAA).');
+            showInlineError(errorBox, 'Digite uma data v\u00e1lida (DD/MM/AAAA).');
             return;
         }
 
         if (!validateCPF(cpfValue)) {
-            showInlineError(errorBox, 'CPF inv?lido. Verifique os n?meros digitados.');
+            showInlineError(errorBox, 'CPF inv\u00e1lido. Verifique os n\u00fameros digitados.');
             return;
         }
 
         if (!isValidEmail(emailValue)) {
-            showInlineError(errorBox, 'Digite um e-mail v?lido.');
+            showInlineError(errorBox, 'Digite um e-mail v\u00e1lido.');
             return;
         }
 
         if (!isValidPhone(phoneValue)) {
-            showInlineError(errorBox, 'Digite um telefone v?lido com DDD.');
+            showInlineError(errorBox, 'Digite um telefone v\u00e1lido com DDD.');
             return;
         }
 
@@ -298,10 +340,13 @@ function initPersonal() {
     });
 
     focusFirstControl(form);
+    initFlags.personal = true;
+    return true;
 }
 
 function initCep() {
-    if (!requirePersonal()) return;
+    if (initFlags.cep) return true;
+    if (!requirePersonal()) return false;
     setStage('cep');
     trackLead('cep_view', { stage: 'cep' });
     const returnTo = getReturnTarget();
@@ -316,6 +361,8 @@ function initCep() {
     const freightBox = document.getElementById('freight-calculation');
     const btnConfirm = document.getElementById('btn-confirm-address');
 
+    if (!cepInput || !btnBuscar || !btnConfirm) return false;
+
     const savedAddress = loadAddress();
     if (savedAddress && cepInput) {
         cepInput.value = savedAddress.cep || '';
@@ -323,10 +370,10 @@ function initCep() {
         if (addrCity) addrCity.innerText = savedAddress.cityLine || '';
         setHidden(addressResult, false);
         setHidden(freightBox, false);
-        btnBuscar?.classList.add('hidden');
+        btnBuscar.classList.add('hidden');
     }
 
-    cepInput?.addEventListener('input', () => {
+    cepInput.addEventListener('input', () => {
         maskCep(cepInput);
         resetCepResults(errorBox, addressResult, freightBox, btnBuscar, loadingRow);
     });
@@ -347,13 +394,12 @@ function initCep() {
         throw new Error('CEP nao encontrado');
     };
 
-    btnBuscar?.addEventListener('click', async () => {
-        if (!cepInput) return;
+    btnBuscar.addEventListener('click', async () => {
         clearInlineError(errorBox);
 
         const rawCep = cepInput.value.replace(/\D/g, '');
         if (rawCep.length !== 8) {
-            showInlineError(errorBox, 'Por favor, digite um CEP v?lido.');
+            showInlineError(errorBox, 'Por favor, digite um CEP v\u00e1lido.');
             return;
         }
 
@@ -368,8 +414,8 @@ function initCep() {
             const data = await fetchCepData(rawCep, 1);
             const street = (data.street || '').trim();
             const neighborhood = (data.neighborhood || '').trim();
-            const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n?o informada';
-            const city = (data.city || 'Cidade n?o informada').trim();
+            const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
+            const city = (data.city || 'Cidade n\u00e3o informada').trim();
             const stateUf = (data.state || '').trim();
             const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -414,7 +460,7 @@ function initCep() {
         }
     });
 
-    btnConfirm?.addEventListener('click', () => {
+    btnConfirm.addEventListener('click', () => {
         if (!loadAddress()) {
             showInlineError(errorBox, 'Confirme o CEP para continuar.');
             return;
@@ -430,11 +476,14 @@ function initCep() {
     });
 
     focusFirstControl(document.querySelector('.step'));
+    initFlags.cep = true;
+    return true;
 }
 
 function initProcessing() {
-    if (!requirePersonal()) return;
-    if (!requireAddress()) return;
+    if (initFlags.processing) return true;
+    if (!requirePersonal()) return false;
+    if (!requireAddress()) return false;
 
     setStage('processing');
     trackLead('processing_view', { stage: 'processing' });
@@ -447,9 +496,10 @@ function initProcessing() {
     const verifiedEl = document.getElementById('processing-verified');
     const overlayEl = document.getElementById('vsl-audio-overlay');
     const overlayBtn = document.getElementById('vsl-audio-btn');
+    if (!textEl || !progressEl || !progressLabelEl) return false;
     const loadingTexts = [
-        'Verificando estoque da bag na sua regi?o...',
-        'Validando seus dados com seguran?a...',
+        'Verificando estoque da bag na sua regi\u00e3o...',
+        'Validando seus dados com seguran\u00e7a...',
         'Confirmando sua prioridade na fila...',
         'Liberando o acesso ao resgate...'
     ];
@@ -556,7 +606,7 @@ function initProcessing() {
                 verifiedEl.classList.remove('hidden');
                 verifiedEl.setAttribute('aria-hidden', 'false');
             }
-            updateText('Verifica??o conclu?da.');
+            updateText('Verifica\u00e7\u00e3o conclu\u00edda.');
 
             setTimeout(() => {
                 setStage('success');
@@ -658,11 +708,15 @@ function initProcessing() {
     } else {
         startTimeline(30000, true);
     }
+
+    initFlags.processing = true;
+    return true;
 }
 
 function initSuccess() {
-    if (!requirePersonal()) return;
-    if (!requireAddress()) return;
+    if (initFlags.success) return true;
+    if (!requirePersonal()) return false;
+    if (!requireAddress()) return false;
 
     setStage('success');
     trackLead('success_view', { stage: 'success' });
@@ -671,6 +725,7 @@ function initSuccess() {
     const leadName = document.getElementById('lead-name');
     const timer = document.getElementById('timer');
     const btnCheckout = document.getElementById('btn-checkout');
+    if (!btnCheckout) return false;
 
     if (leadName && personal?.name) {
         const firstName = personal.name.trim().split(/\s+/)[0];
@@ -679,16 +734,19 @@ function initSuccess() {
 
     startTimer(300, timer);
 
-    btnCheckout?.addEventListener('click', () => {
+    btnCheckout.addEventListener('click', () => {
         trackLead('success_cta', { stage: 'success' });
         setStage('checkout');
         redirect('checkout.html');
     });
+    initFlags.success = true;
+    return true;
 }
 
 function initCheckout() {
-    if (!requirePersonal()) return;
-    if (!requireAddress()) return;
+    if (initFlags.checkout) return true;
+    if (!requirePersonal()) return false;
+    if (!requireAddress()) return false;
 
     setStage('checkout');
     trackLead('checkout_view', { stage: 'checkout' });
@@ -721,6 +779,8 @@ function initCheckout() {
     const freightHint = document.getElementById('freight-hint');
     const shippingTotal = document.getElementById('shipping-total');
     const btnFinish = document.getElementById('btn-finish');
+
+    if (!btnCalcFreight || !freightOptions || !btnFinish) return false;
 
     if (summaryName) summaryName.textContent = personal?.name || '-';
     if (summaryCpf) summaryCpf.textContent = personal?.cpf || '-';
@@ -758,14 +818,14 @@ function initCheckout() {
 
         fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
             .then((res) => {
-                if (!res.ok) throw new Error('CEP n?o encontrado');
+                if (!res.ok) throw new Error('CEP n\u00e3o encontrado');
                 return res.json();
             })
             .then((data) => {
                 const street = (data.street || '').trim();
                 const neighborhood = (data.neighborhood || '').trim();
-                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n?o informada';
-                const city = (data.city || 'Cidade n?o informada').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
+                const city = (data.city || 'Cidade n\u00e3o informada').trim();
                 const stateUf = (data.state || '').trim();
                 const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -786,7 +846,7 @@ function initCheckout() {
                 updateFreightAddress(updatedAddress);
             })
             .catch(() => {
-                showToast('CEP n?o encontrado. Verifique e tente novamente.', 'error');
+                showToast('CEP n\u00e3o encontrado. Verifique e tente novamente.', 'error');
             })
             .finally(() => {
                 if (freightLoading) setHidden(freightLoading, true);
@@ -847,8 +907,8 @@ function initCheckout() {
 
     const updateFreightAddress = (addr) => {
         if (!freightAddress) return;
-        if (freightStreet) freightStreet.textContent = addr?.streetLine || 'Rua n?o informada';
-        if (freightCity) freightCity.textContent = addr?.cityLine || 'Cidade n?o informada';
+        if (freightStreet) freightStreet.textContent = addr?.streetLine || 'Rua n\u00e3o informada';
+        if (freightCity) freightCity.textContent = addr?.cityLine || 'Cidade n\u00e3o informada';
         setHidden(freightAddress, false);
     };
 
@@ -937,7 +997,7 @@ function initCheckout() {
     const calcShipping = () => {
         const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
         if (rawCep.length !== 8) {
-            showToast('Digite um CEP v?lido para calcular o frete.', 'error');
+            showToast('Digite um CEP v\u00e1lido para calcular o frete.', 'error');
             return;
         }
 
@@ -961,14 +1021,14 @@ function initCheckout() {
 
         fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
             .then((res) => {
-                if (!res.ok) throw new Error('CEP n?o encontrado');
+                if (!res.ok) throw new Error('CEP n\u00e3o encontrado');
                 return res.json();
             })
             .then((data) => {
                 const street = (data.street || '').trim();
                 const neighborhood = (data.neighborhood || '').trim();
-                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n?o informada';
-                const city = (data.city || 'Cidade n?o informada').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
+                const city = (data.city || 'Cidade n\u00e3o informada').trim();
                 const stateUf = (data.state || '').trim();
                 const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -1020,7 +1080,7 @@ function initCheckout() {
                 const elapsed = Date.now() - startTime;
                 const remaining = Math.max(0, minDelay - elapsed);
                 setTimeout(() => {
-                    showToast('CEP n?o encontrado. Verifique e tente novamente.', 'error');
+                    showToast('CEP n\u00e3o encontrado. Verifique e tente novamente.', 'error');
                     setHidden(freightLoading, true);
                     if (btnCalcFreight) {
                         btnCalcFreight.classList.remove('hidden');
@@ -1107,7 +1167,7 @@ function initCheckout() {
         syncShippingAfterAddressEdit();
     }
 
-    btnFinish?.addEventListener('click', () => {
+    btnFinish.addEventListener('click', () => {
         if (!btnFinish) return;
         if (!shipping) {
             showToast('Selecione um frete para continuar.', 'error');
@@ -1134,17 +1194,20 @@ function initCheckout() {
                 redirect('orderbump.html');
             });
     });
+    initFlags.checkout = true;
+    return true;
 }
 
 function initOrderBump() {
-    if (!requirePersonal()) return;
-    if (!requireAddress()) return;
+    if (initFlags.orderbump) return true;
+    if (!requirePersonal()) return false;
+    if (!requireAddress()) return false;
 
     const shipping = loadShipping();
     if (!shipping) {
         setStage('checkout');
         redirect('checkout.html');
-        return;
+        return false;
     }
 
     setStage('orderbump');
@@ -1196,11 +1259,15 @@ function initOrderBump() {
             });
     };
 
-    btnAccept?.addEventListener('click', () => proceedToPix(true));
-    btnDecline?.addEventListener('click', () => proceedToPix(false));
+    if (!btnAccept || !btnDecline) return false;
+    btnAccept.addEventListener('click', () => proceedToPix(true));
+    btnDecline.addEventListener('click', () => proceedToPix(false));
+    initFlags.orderbump = true;
+    return true;
 }
 
 function initPix() {
+    if (initFlags.pix) return true;
     const pix = loadPix();
     const shipping = loadShipping();
     const pixQr = document.getElementById('pix-qr');
@@ -1219,7 +1286,8 @@ function initPix() {
     if (!pix) {
         if (pixEmpty) pixEmpty.classList.remove('hidden');
         if (pixCard) pixCard.classList.add('hidden');
-        return;
+        initFlags.pix = true;
+        return true;
     }
 
     trackLead('pix_view', { stage: 'pix', shipping });
@@ -1300,14 +1368,18 @@ function initPix() {
         updateTimer();
         timerId = setInterval(updateTimer, 1000);
     }
+    initFlags.pix = true;
+    return true;
 }
 
 function initAdmin() {
+    if (initFlags.admin) return true;
     const loginWrap = document.getElementById('admin-login');
     const panelWrap = document.getElementById('admin-panel');
     const loginBtn = document.getElementById('admin-login-btn');
     const loginError = document.getElementById('admin-login-error');
     const passwordInput = document.getElementById('admin-password');
+    if (!loginWrap || !panelWrap || !loginBtn || !passwordInput) return false;
 
     const pixelEnabled = document.getElementById('pixel-enabled');
     const pixelId = document.getElementById('pixel-id');
@@ -1858,6 +1930,8 @@ function initAdmin() {
             setLoginVisible(true);
         }
     });
+    initFlags.admin = true;
+    return true;
 }
 
 function renderQuestion(questionConfig, refs) {
@@ -1908,7 +1982,7 @@ function handleAnswer(btnElement, option, refs) {
         );
 
         if (!questions[state.currentQuestionKey]) {
-            showToast('Ocorreu um erro ao carregar a pr?xima pergunta.', 'error');
+            showToast('Ocorreu um erro ao carregar a pr\u00f3xima pergunta.', 'error');
             state.answerLocked = false;
             return;
         }
@@ -2072,21 +2146,21 @@ function buildShippingOptions(rawCep) {
     return [
         {
             id: 'economico',
-            name: 'Envio Econ?mico iFood',
+            name: 'Envio Econ\u00f4mico iFood',
             price: 19.9,
-            eta: '5 a 8 dias ?teis'
+            eta: '5 a 8 dias \u00fateis'
         },
         {
             id: 'padrao',
-            name: 'Envio Padr?o iFood',
+            name: 'Envio Padr\u00e3o iFood',
             price: 25.9,
-            eta: '3 a 5 dias ?teis'
+            eta: '3 a 5 dias \u00fateis'
         },
         {
             id: 'expresso',
-            name: 'Envio Priorit?rio iFood',
+            name: 'Envio Priorit\u00e1rio iFood',
             price: 29.9,
-            eta: '1 a 3 dias ?teis'
+            eta: '1 a 3 dias \u00fateis'
         }
     ];
 }
@@ -2223,7 +2297,7 @@ async function ensureApiSession(force = false) {
         credentials: 'same-origin'
     })
         .then((res) => {
-            if (!res.ok) throw new Error('Falha ao iniciar sess?o segura.');
+            if (!res.ok) throw new Error('Falha ao iniciar sess\u00e3o segura.');
             state.apiSessionAt = Date.now();
             return true;
         })
