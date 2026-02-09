@@ -2317,7 +2317,7 @@ async function ensureApiSession(force = false) {
         credentials: 'same-origin'
     })
         .then((res) => {
-            if (!res.ok) throw new Error('Falha ao iniciar sess\u00e3o segura.');
+            if (!res.ok) return false;
             state.apiSessionAt = Date.now();
             return true;
         })
