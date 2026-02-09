@@ -1618,10 +1618,11 @@ function initAdmin() {
             };
             const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
             pagesInsights.innerHTML = '';
+            let prevEffective = null;
             order.forEach((page, index) => {
                 if (!map.has(page)) return;
                 const current = map.get(page);
-                const prev = index > 0 ? (map.get(order[index - 1]) || 0) : current;
+                const prev = prevEffective ?? current;
                 const carried = Math.min(current, prev);
                 const conv = prev ? Math.round((carried / prev) * 100) : 0;
                 const drop = prev ? Math.max(0, prev - carried) : 0;
@@ -1638,6 +1639,7 @@ function initAdmin() {
                     <span>${meta.desc}</span>
                 `;
                 pagesInsights.appendChild(card);
+                prevEffective = carried;
             });
         }
     };
