@@ -1723,8 +1723,9 @@ function initAdmin() {
             body: JSON.stringify({ password })
         });
         if (!res.ok) {
+            const detail = await res.json().catch(() => ({}));
             if (loginError) {
-                loginError.textContent = 'Senha invalida.';
+                loginError.textContent = detail?.error || 'Senha invalida.';
                 loginError.classList.remove('hidden');
             }
             return;
