@@ -1,6 +1,6 @@
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
-const { sendUtmfy } = require('../../lib/utmfy');
+const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -50,7 +50,11 @@ module.exports = async (req, res) => {
             raw: body
         };
 
-        sendUtmfy(fullPayload.event, fullPayload).catch(() => null);
+        enqueueDispatch({
+            channel: 'utmfy',
+            eventName: fullPayload.event,
+            payload: fullPayload
+        }).then(() => processDispatchQueue(12)).catch(() => null);
 
         const result = await upsertLead(body, req);
 

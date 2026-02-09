@@ -10,8 +10,7 @@ const {
 } = require('../../lib/ativus');
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
-const { sendUtmfy } = require('../../lib/utmfy');
-const { sendPushcut } = require('../../lib/pushcut');
+const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -168,24 +167,36 @@ module.exports = async (req, res) => {
             pixAmount: totalAmount
         }, req).catch(() => null);
 
-        sendUtmfy('pix_created', {
-            amount: totalAmount,
-            sessionId: rawBody.sessionId || '',
-            personal,
-            shipping,
-            bump,
-            utm: rawBody.utm || {}
-        }).catch(() => null);
+        const txid = data.idTransaction || data.idtransaction || '';
+        enqueueDispatch({
+            channel: 'utmfy',
+            eventName: 'pix_created',
+            dedupeKey: txid ? `utmfy:pix_created:${txid}` : null,
+            payload: {
+                amount: totalAmount,
+                sessionId: rawBody.sessionId || '',
+                personal,
+                shipping,
+                bump,
+                utm: rawBody.utm || {},
+                txid
+            }
+        }).then(() => processDispatchQueue(8)).catch(() => null);
 
-        sendPushcut('pix_created', {
-            txid: data.idTransaction || data.idtransaction || '',
-            amount: totalAmount,
-            shippingName: shipping?.name || '',
-            cep: zipCode
-        }).catch(() => null);
+        enqueueDispatch({
+            channel: 'pushcut',
+            kind: 'pix_created',
+            dedupeKey: txid ? `pushcut:pix_created:${txid}` : null,
+            payload: {
+                txid,
+                amount: totalAmount,
+                shippingName: shipping?.name || '',
+                cep: zipCode
+            }
+        }).then(() => processDispatchQueue(8)).catch(() => null);
 
         return res.status(200).json({
-            idTransaction: data.idTransaction || data.idtransaction,
+            idTransaction: txid,
             paymentCode: data.paymentCode || data.paymentcode,
             paymentCodeBase64: data.paymentCodeBase64 || data.paymentcodebase64,
             status: data.status_transaction || data.status || '',

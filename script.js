@@ -1364,6 +1364,8 @@ function initAdmin() {
     const saleUtmfyStatus = document.getElementById('admin-sale-utmfy-status');
     const testPushcutBtn = document.getElementById('admin-test-pushcut');
     const testPushcutStatus = document.getElementById('admin-test-pushcut-status');
+    const processDispatchBtn = document.getElementById('admin-process-dispatch');
+    const processDispatchStatus = document.getElementById('admin-process-dispatch-status');
     const featureOrderbump = document.getElementById('feature-orderbump');
 
     let offset = 0;
@@ -1601,6 +1603,22 @@ function initAdmin() {
         showToast('Teste do Pushcut enviado.', 'success');
     };
 
+    const runDispatchProcess = async () => {
+        if (processDispatchStatus) processDispatchStatus.textContent = 'Processando fila...';
+        const res = await adminFetch('/api/admin/dispatch-process', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) {
+            const reason = data?.error || data?.detail?.reason || 'Falha ao processar fila.';
+            if (processDispatchStatus) processDispatchStatus.textContent = reason;
+            showToast('Falha ao processar fila.', 'error');
+            return;
+        }
+        if (processDispatchStatus) {
+            processDispatchStatus.textContent = `Processados ${data.processed || 0}, sucesso ${data.succeeded || 0}, falha ${data.failed || 0}.`;
+        }
+        showToast('Fila processada com sucesso.', 'success');
+    };
+
     const renderLeads = (rows, append = false) => {
         if (!leadsBody) return;
         if (!append) leadsBody.innerHTML = '';
@@ -1812,6 +1830,7 @@ function initAdmin() {
     testUtmfyBtn?.addEventListener('click', runUtmfyTest);
     saleUtmfyBtn?.addEventListener('click', runUtmfySale);
     testPushcutBtn?.addEventListener('click', runPushcutTest);
+    processDispatchBtn?.addEventListener('click', runDispatchProcess);
 
     navItems.forEach((item) => {
         const itemPage = item.getAttribute('data-admin');

@@ -1,8 +1,6 @@
 const { WEBHOOK_TOKEN } = require('../../lib/ativus');
 const { updateLeadByPixTxid } = require('../../lib/lead-store');
-const { sendUtmfy } = require('../../lib/utmfy');
-const { sendPushcut } = require('../../lib/pushcut');
-const { sendPixelServerEvent } = require('../../lib/pixel-capi');
+const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 const { getAtivusTxid, getAtivusStatus, isAtivusPaidStatus } = require('../../lib/ativus-status');
 
 module.exports = async (req, res) => {
@@ -31,35 +29,57 @@ module.exports = async (req, res) => {
         const update = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
         if (update?.ok && Number(update.count || 0) > 0) {
             const amount = Number(body?.amount || body?.deposito_liquido || body?.cash_out_liquido || 0);
+            const clientIp = req?.headers?.['x-forwarded-for']
+                ? String(req.headers['x-forwarded-for']).split(',')[0].trim()
+                : req?.socket?.remoteAddress || '';
+            const userAgent = req?.headers?.['user-agent'] || '';
 
-            sendUtmfy('pix_confirmed', {
+            enqueueDispatch({
+                channel: 'utmfy',
+                eventName: 'pix_confirmed',
+                dedupeKey: `utmfy:pix_confirmed:${txid}`,
+                payload: {
                 event: 'pix_confirmed',
                 txid,
                 status: statusRaw || 'confirmed',
                 amount,
                 payload: body
-            }).catch(() => null);
+                }
+            }).then(() => processDispatchQueue(10)).catch(() => null);
 
-            sendUtmfy('purchase', {
+            enqueueDispatch({
+                channel: 'utmfy',
+                eventName: 'purchase',
+                dedupeKey: `utmfy:purchase:${txid}`,
+                payload: {
                 event: 'purchase',
                 txid,
                 status: statusRaw || 'confirmed',
                 amount,
                 currency: 'BRL',
                 payload: body
-            }).catch(() => null);
+                }
+            }).then(() => processDispatchQueue(10)).catch(() => null);
 
-            sendPushcut('pix_confirmed', {
-                txid,
-                status: statusRaw || 'confirmed',
-                amount
-            }).catch(() => null);
+            enqueueDispatch({
+                channel: 'pushcut',
+                kind: 'pix_confirmed',
+                dedupeKey: `pushcut:pix_confirmed:${txid}`,
+                payload: { txid, status: statusRaw || 'confirmed', amount }
+            }).then(() => processDispatchQueue(10)).catch(() => null);
 
-            sendPixelServerEvent('Purchase', {
-                amount,
-                client_email: body?.client_email,
-                client_document: body?.client_document
-            }, req).catch(() => null);
+            enqueueDispatch({
+                channel: 'pixel',
+                eventName: 'Purchase',
+                dedupeKey: `pixel:purchase:${txid}`,
+                payload: {
+                    amount,
+                    client_email: body?.client_email,
+                    client_document: body?.client_document,
+                    client_ip: clientIp,
+                    user_agent: userAgent
+                }
+            }).then(() => processDispatchQueue(10)).catch(() => null);
         }
     }
 

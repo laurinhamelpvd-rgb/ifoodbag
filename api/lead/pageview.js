@@ -1,6 +1,6 @@
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { upsertPageview } = require('../../lib/pageviews-store');
-const { sendUtmfy } = require('../../lib/utmfy');
+const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -36,7 +36,11 @@ module.exports = async (req, res) => {
         ? forwarded.split(',')[0].trim()
         : req.socket?.remoteAddress || '';
 
-    sendUtmfy('page_view', {
+    enqueueDispatch({
+        channel: 'utmfy',
+        eventName: 'page_view',
+        dedupeKey: `pageview:${body.sessionId || ''}:${body.page || ''}`,
+        payload: {
         event: 'page_view',
         page: body.page || '',
         sessionId: body.sessionId || '',
@@ -48,7 +52,8 @@ module.exports = async (req, res) => {
             referrer: req.headers['referer'] || '',
             client_ip: clientIp
         }
-    }).catch(() => null);
+        }
+    }).then(() => processDispatchQueue(8)).catch(() => null);
 
     res.status(200).json({ ok: true });
 };

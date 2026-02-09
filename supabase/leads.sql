@@ -72,6 +72,29 @@ create table if not exists public.lead_pageviews (
 
 create index if not exists idx_lead_pageviews_page on public.lead_pageviews (page);
 
+create table if not exists public.event_dispatch_queue (
+  id bigserial primary key,
+  channel text not null,
+  event_name text,
+  kind text,
+  payload jsonb not null default '{}'::jsonb,
+  dedupe_key text,
+  status text not null default 'pending',
+  attempts int not null default 0,
+  last_error text,
+  scheduled_at timestamptz not null default now(),
+  processed_at timestamptz,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_event_dispatch_queue_dedupe
+on public.event_dispatch_queue (dedupe_key)
+where dedupe_key is not null;
+
+create index if not exists idx_event_dispatch_queue_pending
+on public.event_dispatch_queue (status, scheduled_at);
+
 drop view if exists public.pageview_counts;
 create view public.pageview_counts as
 select

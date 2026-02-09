@@ -4,9 +4,9 @@ const { getSettings, saveSettings, defaultSettings } = require('../../lib/settin
 const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
-const { sendPixelServerEvent } = require('../../lib/pixel-capi');
 const { BASE_URL, fetchJson, authHeaders } = require('../../lib/ativus');
 const { getAtivusStatus, isAtivusPaidStatus, isAtivusPendingStatus } = require('../../lib/ativus-status');
+const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 const fetchFn = global.fetch
     ? global.fetch.bind(global)
@@ -406,23 +406,38 @@ async function pixReconcile(req, res) {
                         data?.data?.amount ||
                         0
                     );
-                    sendUtmfy('pix_confirmed', {
-                        event: 'pix_confirmed',
-                        txid,
-                        status,
-                        amount,
-                        payload: data
-                    }).catch(() => null);
-                    sendUtmfy('purchase', {
-                        event: 'purchase',
-                        txid,
-                        status,
-                        amount,
-                        currency: 'BRL',
-                        payload: data
-                    }).catch(() => null);
-                    sendPushcut('pix_confirmed', { txid, status, amount }).catch(() => null);
-                    sendPixelServerEvent('Purchase', { amount }, req).catch(() => null);
+                    enqueueDispatch({
+                        channel: 'utmfy',
+                        eventName: 'pix_confirmed',
+                        dedupeKey: `utmfy:pix_confirmed:${txid}`,
+                        payload: { event: 'pix_confirmed', txid, status, amount, payload: data }
+                    }).then(() => processDispatchQueue(8)).catch(() => null);
+
+                    enqueueDispatch({
+                        channel: 'utmfy',
+                        eventName: 'purchase',
+                        dedupeKey: `utmfy:purchase:${txid}`,
+                        payload: { event: 'purchase', txid, status, amount, currency: 'BRL', payload: data }
+                    }).then(() => processDispatchQueue(8)).catch(() => null);
+
+                    enqueueDispatch({
+                        channel: 'pushcut',
+                        kind: 'pix_confirmed',
+                        dedupeKey: `pushcut:pix_confirmed:${txid}`,
+                        payload: { txid, status, amount }
+                    }).then(() => processDispatchQueue(8)).catch(() => null);
+
+                    const forwarded = req?.headers?.['x-forwarded-for'];
+                    const clientIp = typeof forwarded === 'string' && forwarded
+                        ? forwarded.split(',')[0].trim()
+                        : req?.socket?.remoteAddress || '';
+                    const userAgent = req?.headers?.['user-agent'] || '';
+                    enqueueDispatch({
+                        channel: 'pixel',
+                        eventName: 'Purchase',
+                        dedupeKey: `pixel:purchase:${txid}`,
+                        payload: { amount, client_ip: clientIp, user_agent: userAgent }
+                    }).then(() => processDispatchQueue(8)).catch(() => null);
                 }
             } else if (isAtivusPendingStatus(status)) {
                 pending += 1;
@@ -457,6 +472,22 @@ async function pixReconcile(req, res) {
         updated,
         failedDetails
     });
+}
+
+async function processQueue(req, res) {
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    const limit = clamp(req.query?.limit || 80, 1, 300);
+    const result = await processDispatchQueue(limit);
+    if (!result?.ok) {
+        res.status(502).json({ error: 'Falha ao processar fila.', detail: result });
+        return;
+    }
+    res.status(200).json({ ok: true, ...result });
 }
 
 module.exports = async (req, res) => {
@@ -508,6 +539,8 @@ module.exports = async (req, res) => {
             return pushcutTest(req, res);
         case 'pix-reconcile':
             return pixReconcile(req, res);
+        case 'dispatch-process':
+            return processQueue(req, res);
         default:
             res.status(404).json({ error: 'Not found' });
             return;
