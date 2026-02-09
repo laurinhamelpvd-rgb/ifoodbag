@@ -88,9 +88,9 @@ create table if not exists public.event_dispatch_queue (
   created_at timestamptz not null default now()
 );
 
+drop index if exists idx_event_dispatch_queue_dedupe;
 create unique index if not exists idx_event_dispatch_queue_dedupe
-on public.event_dispatch_queue (dedupe_key)
-where dedupe_key is not null;
+on public.event_dispatch_queue (dedupe_key);
 
 create index if not exists idx_event_dispatch_queue_pending
 on public.event_dispatch_queue (status, scheduled_at);
