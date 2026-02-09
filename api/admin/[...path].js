@@ -421,6 +421,7 @@ async function pixReconcile(req, res) {
                 const up = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false }));
                 const lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
                 const leadData = lead?.ok ? lead.data : null;
+                const leadUtm = leadData?.payload?.utm || {};
                 const changedRows = up?.ok ? Number(up?.count || 0) : 0;
                 if (changedRows > 0) {
                     updated += changedRows;
@@ -471,8 +472,10 @@ async function pixReconcile(req, res) {
                                 utm_content: leadData.utm_content,
                                 gclid: leadData.gclid,
                                 fbclid: leadData.fbclid,
-                                ttclid: leadData.ttclid
-                            } : null,
+                                ttclid: leadData.ttclid,
+                                src: leadUtm.src,
+                                sck: leadUtm.sck
+                            } : leadUtm,
                             payload: data
                         }
                     }).then(() => processDispatchQueue(8)).catch(() => null);
@@ -518,8 +521,10 @@ async function pixReconcile(req, res) {
                                 utm_content: leadData.utm_content,
                                 gclid: leadData.gclid,
                                 fbclid: leadData.fbclid,
-                                ttclid: leadData.ttclid
-                            } : null,
+                                ttclid: leadData.ttclid,
+                                src: leadUtm.src,
+                                sck: leadUtm.sck
+                            } : leadUtm,
                             payload: data
                         }
                     }).then(() => processDispatchQueue(8)).catch(() => null);

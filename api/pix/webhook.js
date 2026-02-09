@@ -35,6 +35,7 @@ module.exports = async (req, res) => {
                 ? String(req.headers['x-forwarded-for']).split(',')[0].trim()
                 : req?.socket?.remoteAddress || '';
             const userAgent = req?.headers?.['user-agent'] || '';
+            const leadUtm = leadData?.payload?.utm || {};
 
             enqueueDispatch({
                 channel: 'utmfy',
@@ -76,8 +77,10 @@ module.exports = async (req, res) => {
                     utm_content: leadData.utm_content,
                     gclid: leadData.gclid,
                     fbclid: leadData.fbclid,
-                    ttclid: leadData.ttclid
-                } : null,
+                    ttclid: leadData.ttclid,
+                    src: leadUtm.src,
+                    sck: leadUtm.sck
+                } : leadUtm,
                 payload: body,
                 client_ip: clientIp,
                 user_agent: userAgent
@@ -125,8 +128,10 @@ module.exports = async (req, res) => {
                     utm_content: leadData.utm_content,
                     gclid: leadData.gclid,
                     fbclid: leadData.fbclid,
-                    ttclid: leadData.ttclid
-                } : null,
+                    ttclid: leadData.ttclid,
+                    src: leadUtm.src,
+                    sck: leadUtm.sck
+                } : leadUtm,
                 payload: body,
                 client_ip: clientIp,
                 user_agent: userAgent

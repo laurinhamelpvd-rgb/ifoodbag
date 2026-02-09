@@ -107,6 +107,15 @@ module.exports = async (req, res) => {
                     country: 'br'
                 }
             },
+            checkout: {
+                utm_source: rawBody?.utm?.utm_source || '',
+                utm_medium: rawBody?.utm?.utm_medium || '',
+                utm_campaign: rawBody?.utm?.utm_campaign || '',
+                utm_term: rawBody?.utm?.utm_term || '',
+                utm_content: rawBody?.utm?.utm_content || '',
+                src: rawBody?.utm?.src || '',
+                sck: rawBody?.utm?.sck || ''
+            },
             items,
             postbackUrl,
             ip: extractIp(req),
