@@ -1362,6 +1362,8 @@ function initAdmin() {
     const testUtmfyStatus = document.getElementById('admin-test-utmfy-status');
     const saleUtmfyBtn = document.getElementById('admin-sale-utmfy');
     const saleUtmfyStatus = document.getElementById('admin-sale-utmfy-status');
+    const testPushcutBtn = document.getElementById('admin-test-pushcut');
+    const testPushcutStatus = document.getElementById('admin-test-pushcut-status');
     const featureOrderbump = document.getElementById('feature-orderbump');
 
     let offset = 0;
@@ -1566,6 +1568,37 @@ function initAdmin() {
         }
         if (saleUtmfyStatus) saleUtmfyStatus.textContent = 'Venda enviada.';
         showToast('Venda enviada ao UTMfy.', 'success');
+    };
+
+    const runPushcutTest = async () => {
+        if (!pushcutEnabled?.checked) {
+            if (testPushcutStatus) testPushcutStatus.textContent = 'Ative o Pushcut e salve antes do teste.';
+            showToast('Ative o Pushcut e salve.', 'error');
+            return;
+        }
+        if (!(pushcutPixCreated?.value || '').trim() && !(pushcutPixConfirmed?.value || '').trim()) {
+            if (testPushcutStatus) testPushcutStatus.textContent = 'Informe ao menos uma URL de Pushcut.';
+            showToast('Configure a URL de Pushcut.', 'error');
+            return;
+        }
+
+        if (testPushcutStatus) testPushcutStatus.textContent = 'Enviando teste...';
+        const res = await adminFetch('/api/admin/pushcut-test', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data?.ok) {
+            const reason = data?.error || data?.detail?.reason || 'Falha ao testar Pushcut.';
+            if (testPushcutStatus) testPushcutStatus.textContent = reason;
+            showToast('Falha no teste do Pushcut.', 'error');
+            return;
+        }
+
+        const createdOk = !!data?.results?.pix_created?.ok;
+        const confirmedOk = !!data?.results?.pix_confirmed?.ok;
+        if (testPushcutStatus) {
+            testPushcutStatus.textContent = `PIX criado: ${createdOk ? 'OK' : 'ERRO'} | PIX confirmado: ${confirmedOk ? 'OK' : 'ERRO'}`;
+        }
+        showToast('Teste do Pushcut enviado.', 'success');
     };
 
     const renderLeads = (rows, append = false) => {
@@ -1778,6 +1811,7 @@ function initAdmin() {
     testPixelBtn?.addEventListener('click', runPixelTest);
     testUtmfyBtn?.addEventListener('click', runUtmfyTest);
     saleUtmfyBtn?.addEventListener('click', runUtmfySale);
+    testPushcutBtn?.addEventListener('click', runPushcutTest);
 
     navItems.forEach((item) => {
         const itemPage = item.getAttribute('data-admin');

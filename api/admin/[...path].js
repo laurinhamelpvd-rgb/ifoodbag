@@ -285,6 +285,63 @@ async function utmfySale(req, res) {
     res.status(200).json({ ok: true, amount });
 }
 
+async function pushcutTest(req, res) {
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    const cfg = (await getSettings())?.pushcut || {};
+    if (cfg.enabled === false) {
+        res.status(400).json({ ok: false, error: 'Pushcut desativado.' });
+        return;
+    }
+    if (!String(cfg.pixCreatedUrl || '').trim() && !String(cfg.pixConfirmedUrl || '').trim()) {
+        res.status(400).json({ ok: false, error: 'Configure ao menos uma URL de Pushcut.' });
+        return;
+    }
+
+    const txid = `pushcut-test-${Date.now()}`;
+    const basePayload = {
+        txid,
+        amount: 56.1,
+        source: 'admin_test',
+        created_at: new Date().toISOString()
+    };
+
+    const createdResult = await sendPushcut('pix_created', {
+        ...basePayload,
+        status: 'pending'
+    }).catch((error) => ({ ok: false, reason: error?.message || 'request_error' }));
+
+    const confirmedResult = await sendPushcut('pix_confirmed', {
+        ...basePayload,
+        status: 'paid'
+    }).catch((error) => ({ ok: false, reason: error?.message || 'request_error' }));
+
+    const ok = !!createdResult?.ok || !!confirmedResult?.ok;
+    if (!ok) {
+        res.status(400).json({
+            ok: false,
+            error: 'Falha ao enviar testes Pushcut.',
+            results: {
+                pix_created: createdResult,
+                pix_confirmed: confirmedResult
+            }
+        });
+        return;
+    }
+
+    res.status(200).json({
+        ok: true,
+        results: {
+            pix_created: createdResult,
+            pix_confirmed: confirmedResult
+        }
+    });
+}
+
 async function pixReconcile(req, res) {
     if (req.method !== 'POST') {
         res.status(405).json({ error: 'Method not allowed' });
@@ -447,6 +504,8 @@ module.exports = async (req, res) => {
             return utmfyTest(req, res);
         case 'utmfy-sale':
             return utmfySale(req, res);
+        case 'pushcut-test':
+            return pushcutTest(req, res);
         case 'pix-reconcile':
             return pixReconcile(req, res);
         default:
