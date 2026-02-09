@@ -14,6 +14,49 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.en
 
 const pick = (...values) => values.find((value) => value !== undefined && value !== null && value !== '');
 const isPaidStatus = (statusRaw) => /paid|approved|confirm|completed|success|conclu|aprov/.test(String(statusRaw || '').toLowerCase());
+const clamp = (value, min, max) => Math.min(Math.max(Number(value) || 0, min), max);
+
+async function listPendingPixCandidates({ pageSize = 200, maxRows = 5000 } = {}) {
+    const rows = [];
+    let offset = 0;
+
+    while (rows.length < maxRows) {
+        const limit = Math.min(pageSize, maxRows - rows.length);
+        const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
+        url.searchParams.set('select', 'pix_txid,last_event,updated_at');
+        url.searchParams.set('pix_txid', 'not.is.null');
+        url.searchParams.set('or', '(last_event.is.null,last_event.neq.pix_confirmed)');
+        url.searchParams.set('order', 'updated_at.asc');
+        url.searchParams.set('limit', String(limit));
+        url.searchParams.set('offset', String(offset));
+
+        const response = await fetchFn(url.toString(), {
+            headers: {
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            return { ok: false, detail };
+        }
+
+        const batch = await response.json().catch(() => []);
+        if (!Array.isArray(batch) || batch.length === 0) {
+            break;
+        }
+
+        rows.push(...batch);
+        offset += batch.length;
+        if (batch.length < limit) {
+            break;
+        }
+    }
+
+    return { ok: true, rows };
+}
 
 async function getLeads(req, res) {
     if (req.method !== 'GET') {
@@ -233,38 +276,30 @@ async function pixReconcile(req, res) {
         return;
     }
 
-    const limit = Math.min(Math.max(Number(req.query?.limit) || 20, 1), 100);
-    const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
-    url.searchParams.set('select', 'pix_txid,last_event,updated_at');
-    url.searchParams.set('pix_txid', 'not.is.null');
-    url.searchParams.set('or', '(last_event.is.null,last_event.neq.pix_confirmed)');
-    url.searchParams.set('order', 'updated_at.desc');
-    url.searchParams.set('limit', String(limit));
+    const pageSize = clamp(req.query?.pageSize || req.query?.limit || 200, 1, 500);
+    const maxRows = clamp(req.query?.maxRows || 5000, 1, 20000);
+    const concurrency = clamp(req.query?.concurrency || 6, 1, 12);
 
-    const pendingRes = await fetchFn(url.toString(), {
-        headers: {
-            apikey: SUPABASE_SERVICE_KEY,
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-            'Content-Type': 'application/json'
-        }
-    });
-
-    if (!pendingRes.ok) {
-        const detail = await pendingRes.text().catch(() => '');
-        res.status(502).json({ error: 'Falha ao buscar pendentes.', detail });
+    const candidatesResult = await listPendingPixCandidates({ pageSize, maxRows });
+    if (!candidatesResult.ok) {
+        res.status(502).json({ error: 'Falha ao buscar pendentes.', detail: candidatesResult.detail || '' });
         return;
     }
-
-    const rows = await pendingRes.json().catch(() => []);
+    const uniqueTxids = Array.from(
+        new Set(
+            (candidatesResult.rows || [])
+                .map((row) => String(row?.pix_txid || '').trim())
+                .filter(Boolean)
+        )
+    );
 
     let checked = 0;
     let confirmed = 0;
     let pending = 0;
     let failed = 0;
+    let updated = 0;
 
-    for (const row of rows) {
-        const txid = String(row.pix_txid || '').trim();
-        if (!txid) continue;
+    const runOne = async (txid) => {
         checked += 1;
         try {
             const { response, data } = await fetchJson(
@@ -273,7 +308,7 @@ async function pixReconcile(req, res) {
             );
             if (!response.ok) {
                 failed += 1;
-                continue;
+                return;
             }
             const status = pick(
                 data?.status,
@@ -284,7 +319,8 @@ async function pixReconcile(req, res) {
             );
             if (isPaidStatus(status)) {
                 confirmed += 1;
-                updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => null);
+                const up = await updateLeadByPixTxid(txid, { last_event: 'pix_confirmed', stage: 'pix' }).catch(() => ({ ok: false }));
+                if (up?.ok) updated += 1;
                 sendUtmfy('pix_confirmed', {
                     event: 'pix_confirmed',
                     txid,
@@ -297,9 +333,23 @@ async function pixReconcile(req, res) {
         } catch (_error) {
             failed += 1;
         }
+    };
+
+    for (let i = 0; i < uniqueTxids.length; i += concurrency) {
+        const chunk = uniqueTxids.slice(i, i + concurrency);
+        // Processa em paralelo controlado para reduzir tempo total sem sobrecarregar a API.
+        await Promise.all(chunk.map((txid) => runOne(txid)));
     }
 
-    res.status(200).json({ ok: true, checked, confirmed, pending, failed });
+    res.status(200).json({
+        ok: true,
+        candidates: uniqueTxids.length,
+        checked,
+        confirmed,
+        pending,
+        failed,
+        updated
+    });
 }
 
 module.exports = async (req, res) => {
