@@ -2210,3 +2210,99 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
         animation: spin 0.9s linear infinite !important;
     }
 }
+
+.coupon-banner {
+    background: #fff4f5;
+    border: 1px solid #f7c7cc;
+    color: #7a131a;
+    padding: 12px 14px;
+    border-radius: 14px;
+    font-size: 0.92rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 12px 0 14px;
+}
+
+.coupon-banner strong {
+    font-weight: 700;
+}
+
+.coupon-banner span {
+    color: #9a1b24;
+}
+
+.price-old {
+    text-decoration: line-through;
+    color: #9a9a9a;
+    font-weight: 500;
+}
+
+.price-new {
+    color: #ea1d2c;
+    font-weight: 700;
+}
+
+.freight-option__price {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+    font-weight: 700;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-card {
+    background: #fff;
+    border-radius: 18px;
+    padding: 22px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+}
+
+.modal-badge {
+    display: inline-flex;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #ea1d2c;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
+}
+
+.modal-card h3 {
+    margin: 6px 0 8px;
+    font-size: 1.25rem;
+}
+
+.modal-card p {
+    margin: 0 0 14px;
+    color: #5f5f5f;
+}
+
+.coupon-prices {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 1.1rem;
+}

@@ -101,7 +101,8 @@ const STORAGE_KEYS = {
     bump: 'ifoodbag.bump',
     leadSession: 'ifoodbag.leadSession',
     utm: 'ifoodbag.utm',
-    pixelConfig: 'ifoodbag.pixelConfig'
+    pixelConfig: 'ifoodbag.pixelConfig',
+    coupon: 'ifoodbag.coupon'
 };
 
 const state = {
@@ -721,6 +722,16 @@ function initCheckout() {
     const freightHint = document.getElementById('freight-hint');
     const shippingTotal = document.getElementById('shipping-total');
     const btnFinish = document.getElementById('btn-finish');
+    const couponBanner = document.getElementById('coupon-banner');
+
+    const coupon = loadCoupon();
+    if (couponBanner && coupon?.discount) {
+        couponBanner.classList.remove('hidden');
+        couponBanner.innerHTML = `
+            <strong>Cupom aplicado:</strong> ${coupon.code || 'FRETE20'}
+            <span>${Math.round(coupon.discount * 100)}% OFF no frete da Bag</span>
+        `;
+    }
 
     if (summaryName) summaryName.textContent = personal?.name || '-';
     if (summaryCpf) summaryCpf.textContent = personal?.cpf || '-';
@@ -746,6 +757,10 @@ function initCheckout() {
     if (checkoutCep) {
         checkoutCep.value = address?.cep || '';
         checkoutCep.addEventListener('input', () => maskCep(checkoutCep));
+    }
+
+    if (shipping) {
+        shipping = applyCouponToShipping(shipping);
     }
 
     let cepLookupTimer = null;
@@ -820,6 +835,10 @@ function initCheckout() {
         if (!freightOptions) return;
         freightOptions.innerHTML = '';
         options.forEach((opt) => {
+            const hasDiscount = Number(opt.originalPrice || 0) > Number(opt.price || 0);
+            const priceHtml = hasDiscount
+                ? `<span class="price-old">${formatCurrency(opt.originalPrice)}</span><span class="price-new">${formatCurrency(opt.price)}</span>`
+                : `${formatCurrency(opt.price)}`;
             const label = document.createElement('label');
             label.className = 'freight-option';
             if (opt.id === selectedId) label.classList.add('freight-option--active');
@@ -829,7 +848,7 @@ function initCheckout() {
                     <div class="freight-option__title">${opt.name}</div>
                     <div class="freight-option__eta">${opt.eta}</div>
                 </div>
-                <div class="freight-option__price">${formatCurrency(opt.price)}</div>
+                <div class="freight-option__price">${priceHtml}</div>
             `;
             label.addEventListener('click', () => {
                 selectShipping(opt, options);
@@ -912,7 +931,13 @@ function initCheckout() {
         shipping = opt;
         trackLead('frete_selected', { stage: 'checkout', shipping: opt });
         if (shippingTotal) {
-            shippingTotal.querySelector('strong').textContent = formatCurrency(opt.price);
+            const strong = shippingTotal.querySelector('strong');
+            const hasDiscount = Number(opt.originalPrice || 0) > Number(opt.price || 0);
+            if (strong) {
+                strong.innerHTML = hasDiscount
+                    ? `<span class="price-old">${formatCurrency(opt.originalPrice)}</span><span class="price-new">${formatCurrency(opt.price)}</span>`
+                    : formatCurrency(opt.price);
+            }
             setHidden(shippingTotal, false);
         }
         if (btnFinish) {
@@ -1050,7 +1075,13 @@ function initCheckout() {
         setHidden(freightForm, true);
         showFreightSelection();
         if (shippingTotal) {
-            shippingTotal.querySelector('strong').textContent = formatCurrency(shipping.price);
+            const strong = shippingTotal.querySelector('strong');
+            const hasDiscount = Number(shipping.originalPrice || 0) > Number(shipping.price || 0);
+            if (strong) {
+                strong.innerHTML = hasDiscount
+                    ? `<span class="price-old">${formatCurrency(shipping.originalPrice)}</span><span class="price-new">${formatCurrency(shipping.price)}</span>`
+                    : formatCurrency(shipping.price);
+            }
             setHidden(shippingTotal, false);
         }
         if (btnFinish) btnFinish.classList.remove('hidden');
@@ -1083,7 +1114,13 @@ function initCheckout() {
             setHidden(summaryBlock, false);
             showFreightSelection();
             if (shippingTotal) {
-                shippingTotal.querySelector('strong').textContent = formatCurrency(storedShipping.price);
+                const strong = shippingTotal.querySelector('strong');
+                const hasDiscount = Number(storedShipping.originalPrice || 0) > Number(storedShipping.price || 0);
+                if (strong) {
+                    strong.innerHTML = hasDiscount
+                        ? `<span class="price-old">${formatCurrency(storedShipping.originalPrice)}</span><span class="price-new">${formatCurrency(storedShipping.price)}</span>`
+                        : formatCurrency(storedShipping.price);
+                }
                 setHidden(shippingTotal, false);
             }
             if (btnFinish) btnFinish.classList.remove('hidden');
@@ -1300,6 +1337,72 @@ function initPix() {
         updateTimer();
         timerId = setInterval(updateTimer, 1000);
     }
+
+    setupBackRedirectCoupon(shipping);
+}
+
+function setupBackRedirectCoupon(shipping) {
+    const modal = document.getElementById('coupon-modal');
+    const btnApply = document.getElementById('btn-coupon-apply');
+    const btnExit = document.getElementById('btn-coupon-exit');
+    const priceOld = document.getElementById('coupon-old');
+    const priceNew = document.getElementById('coupon-new');
+
+    if (!modal || !btnApply || !btnExit) return;
+
+    const basePrice = Number(shipping?.originalPrice || shipping?.price || 25.9);
+    const discount = 0.2;
+    const discounted = roundMoney(basePrice * (1 - discount));
+    if (priceOld) priceOld.textContent = formatCurrency(basePrice);
+    if (priceNew) priceNew.textContent = formatCurrency(discounted);
+
+    const offerKey = 'ifoodbag.couponOfferShown';
+    let allowBack = false;
+
+    const showModal = () => {
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        trackLead('coupon_offer_shown', { stage: 'pix', shipping });
+    };
+
+    const hideModal = () => {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+    };
+
+    const handlePop = () => {
+        if (allowBack) {
+            window.removeEventListener('popstate', handlePop);
+            return;
+        }
+        if (sessionStorage.getItem(offerKey)) {
+            allowBack = true;
+            window.removeEventListener('popstate', handlePop);
+            return;
+        }
+        sessionStorage.setItem(offerKey, '1');
+        showModal();
+        history.pushState({}, '', location.href);
+    };
+
+    history.pushState({}, '', location.href);
+    history.pushState({}, '', location.href);
+    window.addEventListener('popstate', handlePop);
+
+    btnApply.addEventListener('click', () => {
+        saveCoupon({ code: 'FRETE20', discount, appliedAt: Date.now() });
+        hideModal();
+        trackLead('coupon_offer_accept', { stage: 'pix', shipping });
+        setStage('checkout');
+        redirect('checkout.html');
+    });
+
+    btnExit.addEventListener('click', () => {
+        hideModal();
+        trackLead('coupon_offer_exit', { stage: 'pix', shipping });
+        allowBack = true;
+        history.back();
+    });
 }
 
 function initAdmin() {
@@ -2068,8 +2171,31 @@ function formatCurrency(value) {
     }).format(value);
 }
 
+function roundMoney(value) {
+    return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function saveCoupon(data) {
+    localStorage.setItem(STORAGE_KEYS.coupon, JSON.stringify(data));
+}
+
+function loadCoupon() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.coupon);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function clearCoupon() {
+    localStorage.removeItem(STORAGE_KEYS.coupon);
+}
+
 function buildShippingOptions(rawCep) {
-    return [
+    const coupon = loadCoupon();
+    const discount = coupon?.discount ? Number(coupon.discount) : 0;
+    const baseOptions = [
         {
             id: 'economico',
             name: 'Envio Econômico iFood',
@@ -2089,6 +2215,17 @@ function buildShippingOptions(rawCep) {
             eta: '1 a 3 dias úteis'
         }
     ];
+
+    return baseOptions.map((opt) => {
+        const original = Number(opt.price || 0);
+        const discounted = discount ? roundMoney(original * (1 - discount)) : original;
+        return {
+            ...opt,
+            originalPrice: discount ? original : null,
+            price: discounted,
+            discountApplied: discount > 0
+        };
+    });
 }
 
 function saveShipping(data) {
@@ -2102,6 +2239,25 @@ function loadShipping() {
     } catch (error) {
         return null;
     }
+}
+
+function applyCouponToShipping(shipping) {
+    if (!shipping) return shipping;
+    const coupon = loadCoupon();
+    if (!coupon?.discount) return shipping;
+    const base = Number(shipping.originalPrice || shipping.basePrice || shipping.price || 0);
+    const discounted = roundMoney(base * (1 - coupon.discount));
+    if (discounted === shipping.price && shipping.coupon === coupon.code) return shipping;
+    const updated = {
+        ...shipping,
+        basePrice: base,
+        originalPrice: base,
+        price: discounted,
+        coupon: coupon.code || 'FRETE20',
+        discountApplied: true
+    };
+    saveShipping(updated);
+    return updated;
 }
 
 function saveAddressExtra(data) {
