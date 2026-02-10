@@ -361,16 +361,16 @@ function setupGlobalBackRedirect(page) {
     if (btnApply) {
         btnApply.addEventListener('click', async () => {
             let copiedPix = false;
-            if (page === 'pix') {
+            if (offer.mode === 'pix-copy') {
                 copiedPix = await copyPixCodeFromField();
-            } else {
+            } else if (offer.mode === 'coupon') {
                 saveCoupon({ code: 'FRETE5', amountOff: 5, appliedAt: Date.now() });
                 sessionStorage.setItem(STORAGE_KEYS.directCheckout, '1');
             }
             hideCouponModal();
             trackLead(offer.acceptEvent, { stage: page, copiedPix });
-            if (page === 'pix') return;
-            setStage('checkout');
+            if (offer.mode === 'pix-copy') return;
+            if (offer.mode === 'coupon') setStage('checkout');
             redirect(resolveTargetUrl());
         });
     }
@@ -399,6 +399,7 @@ function setupExitGuard(page) {
 function getBackRedirectOffer(page) {
     if (page === 'pix') {
         return {
+            mode: 'pix-copy',
             badge: 'Pagamento pendente',
             title: 'Pagamento pendente no PIX',
             message: 'Copie o código PIX agora para confirmar seu pedido sem perder prioridade.',
@@ -408,7 +409,20 @@ function getBackRedirectOffer(page) {
             acceptEvent: 'pix_exit_offer_accept'
         };
     }
+    if (page === 'upsell') {
+        return {
+            mode: 'resume',
+            badge: 'Prioridade ativa',
+            title: 'Sua prioridade ainda está disponível',
+            message: 'Volte agora para manter seu lugar no próximo lote e concluir mais rápido.',
+            subtitle: 'A oferta pode expirar nesta sessão',
+            cta: 'Voltar e concluir agora',
+            shownEvent: 'upsell_exit_offer_shown',
+            acceptEvent: 'upsell_exit_offer_accept'
+        };
+    }
     return {
+        mode: 'coupon',
         badge: 'Cupom exclusivo',
         title: 'Desconto liberado no frete',
         message: 'Você ganhou R$ 5,00 de desconto no frete da Bag.',
@@ -2145,6 +2159,8 @@ function buildBackRedirectUrl(pageOverride) {
     const address = loadAddress();
     const shipping = loadShipping();
     const pix = loadPix();
+    const pixPaid = isPixPaid(pix);
+    const pixPending = !!pix && !pixPaid;
     const canOpenVsl = !!(
         personal?.name &&
         personal?.cpf &&
@@ -2156,6 +2172,15 @@ function buildBackRedirectUrl(pageOverride) {
     const vslRequiredPages = new Set(['home', 'success', 'checkout', 'orderbump', 'pix', 'upsell']);
     if (!isVslCompleted() && canOpenVsl && vslRequiredPages.has(page)) {
         return 'processando.html';
+    }
+    if (pixPending) {
+        return 'pix.html';
+    }
+    if (pixPaid && page !== 'upsell') {
+        return 'upsell.html';
+    }
+    if (shipping && !pixPending && page !== 'upsell') {
+        return 'orderbump.html';
     }
 
     switch (page) {
@@ -2170,15 +2195,15 @@ function buildBackRedirectUrl(pageOverride) {
             if (shipping) return 'orderbump.html';
             return directCheckoutUrl();
         case 'orderbump':
-            if (pix) return 'pix.html';
+            if (pixPending) return 'pix.html';
             if (shipping) return 'orderbump.html';
             return directCheckoutUrl();
         case 'pix':
-            return directCheckoutUrl();
+            return pixPending ? 'pix.html' : directCheckoutUrl();
         case 'upsell':
-            return directCheckoutUrl();
+            return pixPending ? 'pix.html' : 'upsell.html';
         default:
-            if (pix) return 'pix.html';
+            if (pixPending) return 'pix.html';
             if (shipping) return 'orderbump.html';
             return directCheckoutUrl();
     }
@@ -3813,6 +3838,13 @@ function markVslCompleted() {
 
 function isVslCompleted() {
     return localStorage.getItem(STORAGE_KEYS.vslCompleted) === '1';
+}
+
+function isPixPaid(pix) {
+    if (!pix || typeof pix !== 'object') return false;
+    if (pix.upsellPaid === true) return true;
+    const status = String(pix.status || pix.statusRaw || '').toLowerCase();
+    return /paid|approved|confirm|completed|success|conclu|aprov/.test(status);
 }
 
 function resolveResumeUrl() {
