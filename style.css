@@ -907,6 +907,54 @@ body[data-page='orderbump'] .step {
     line-height: 1;
 }
 
+.upsell-explain {
+    width: 100%;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px;
+    text-align: left;
+}
+
+.upsell-explain h3 {
+    font-size: 0.95rem;
+    margin: 0 0 4px;
+    color: #1f1f1f;
+}
+
+.upsell-explain p {
+    margin: 0 0 6px;
+    font-size: 0.86rem;
+    color: #525252;
+    line-height: 1.3;
+    max-width: none;
+}
+
+.upsell-explain ul {
+    list-style: none;
+    display: grid;
+    gap: 4px;
+}
+
+.upsell-explain li {
+    position: relative;
+    padding-left: 16px;
+    font-size: 0.83rem;
+    color: #555;
+    line-height: 1.25;
+}
+
+.upsell-explain li::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    position: absolute;
+    left: 0;
+    top: 5px;
+}
+
 .upsell-urgency--expired {
     border-color: #ffd9a8;
     background: #fff8ef;
@@ -1002,7 +1050,7 @@ body[data-page='orderbump'] .step {
 
 .upsell-image-slot {
     width: 100%;
-    min-height: 160px;
+    min-height: 210px;
     border-radius: 14px;
     border: 1px solid #efefef;
     background: #fff;
@@ -1026,7 +1074,7 @@ body[data-page='orderbump'] .step {
 .upsell-image-slot__img {
     width: 100%;
     height: auto;
-    max-height: 200px;
+    max-height: 300px;
     object-fit: contain;
     border-radius: 10px;
     display: block;
@@ -1085,6 +1133,10 @@ body[data-page='upsell'] .action-stack {
 
 .upsell-step--paid .upsell-urgency,
 .upsell-step--paid .upsell-delivery-grid {
+    display: none;
+}
+
+.upsell-step--paid .upsell-explain {
     display: none;
 }
 
@@ -2717,7 +2769,7 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     }
 
     .upsell-image-slot {
-        min-height: 126px;
+        min-height: 180px;
     }
 
     .upsell-urgency {
@@ -2759,7 +2811,20 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     }
 
     .upsell-image-slot__img {
-        max-height: 132px;
+        max-height: 230px;
+    }
+
+    .upsell-explain {
+        padding: 8px 9px;
+    }
+
+    .upsell-explain h3 {
+        font-size: 0.88rem;
+    }
+
+    .upsell-explain p,
+    .upsell-explain li {
+        font-size: 0.79rem;
     }
 }
 
@@ -2794,12 +2859,12 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     }
 
     .upsell-image-slot {
-        min-height: 102px;
+        min-height: 180px;
         padding: 6px;
     }
 
     .upsell-image-slot__img {
-        max-height: 108px;
+        max-height: 230px;
     }
 
     .upsell-benefits {
