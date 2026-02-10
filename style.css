@@ -1013,9 +1013,10 @@ body[data-page='orderbump'] .step {
         #ffffff;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
-    padding: 12px;
+    padding: 8px;
+    overflow: hidden;
 }
 
 .upsell-image-slot__hint {
@@ -1025,6 +1026,15 @@ body[data-page='orderbump'] .step {
     border: 1px dashed #e0e0e0;
     border-radius: 999px;
     padding: 6px 10px;
+}
+
+.upsell-image-slot__img {
+    width: 100%;
+    height: auto;
+    max-height: 460px;
+    object-fit: contain;
+    border-radius: 12px;
+    display: block;
 }
 
 .upsell-benefits {
