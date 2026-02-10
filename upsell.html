@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=3.4">
+    <link rel="stylesheet" href="style.css?v=3.6">
     <script src="/backguard.js?v=1.1"></script>
     <script src="https://cdn.utmify.com.br/scripts/utms/latest.js" data-utmify-prevent-xcod-sck
         data-utmify-prevent-subids async defer></script>
@@ -85,6 +85,11 @@
                 </div>
             </div>
 
+            <div class="action-stack">
+                <button id="btn-upsell-accept" class="btn-primary" type="button">Quero receber em 1 dia por R$ 18,98</button>
+                <button id="btn-upsell-skip" class="btn-secondary" type="button">Continuar com prazo padrao</button>
+            </div>
+
             <div class="upsell-image-slot" id="upsell-image-slot" aria-label="Imagem da oferta de adiantamento">
                 <img
                     src="assets/upsellfoto.webp"
@@ -99,11 +104,6 @@
                 <li>Atualizacao de rastreio no mesmo dia</li>
                 <li>Entrega acelerada sem perder a reserva</li>
             </ul>
-
-            <div class="action-stack">
-                <button id="btn-upsell-accept" class="btn-primary" type="button">Quero receber em 1 dia por R$ 18,98</button>
-                <button id="btn-upsell-skip" class="btn-secondary" type="button">Continuar com prazo padrao</button>
-            </div>
 
             <div id="upsell-loading" class="inline-loading hidden" aria-hidden="true">
                 <div class="spinner spinner--sm" aria-hidden="true"></div>
