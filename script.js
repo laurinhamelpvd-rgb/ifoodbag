@@ -2259,7 +2259,6 @@ function initAdmin() {
     const gatewaySunizeBaseUrl = document.getElementById('gateway-sunize-base-url');
     const gatewaySunizeApiKey = document.getElementById('gateway-sunize-api-key');
     const gatewaySunizeApiSecret = document.getElementById('gateway-sunize-api-secret');
-    const gatewaySunizeWebhookToken = document.getElementById('gateway-sunize-webhook-token');
     const gatewayAtivushubState = document.getElementById('gateway-ativushub-state');
     const gatewayGhostspayState = document.getElementById('gateway-ghostspay-state');
     const gatewaySunizeState = document.getElementById('gateway-sunize-state');
@@ -2383,8 +2382,7 @@ function initAdmin() {
         gatewaySunizeEnabled ||
         gatewaySunizeBaseUrl ||
         gatewaySunizeApiKey ||
-        gatewaySunizeApiSecret ||
-        gatewaySunizeWebhookToken
+        gatewaySunizeApiSecret
     );
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
@@ -2524,7 +2522,6 @@ function initAdmin() {
             if (gatewaySunizeBaseUrl) gatewaySunizeBaseUrl.value = sunize.baseUrl || '';
             if (gatewaySunizeApiKey) gatewaySunizeApiKey.value = sunize.apiKey || '';
             if (gatewaySunizeApiSecret) gatewaySunizeApiSecret.value = sunize.apiSecret || '';
-            if (gatewaySunizeWebhookToken) gatewaySunizeWebhookToken.value = sunize.webhookToken || '';
 
             syncGatewaySwitches();
             setCurrentGatewayCard(activeGateway);
@@ -2633,8 +2630,7 @@ function initAdmin() {
                         enabled: !!gatewaySunizeEnabled?.checked,
                         baseUrl: gatewaySunizeBaseUrl?.value?.trim() || '',
                         apiKey: gatewaySunizeApiKey?.value?.trim() || '',
-                        apiSecret: gatewaySunizeApiSecret?.value?.trim() || '',
-                        webhookToken: gatewaySunizeWebhookToken?.value?.trim() || ''
+                        apiSecret: gatewaySunizeApiSecret?.value?.trim() || ''
                     }
                 }
             };

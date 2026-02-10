@@ -168,7 +168,6 @@ function sanitizeSettingsForAdmin(settingsData = {}) {
     payload.payments.gateways.ghostspay.webhookToken = maskSecret(payload.payments.gateways.ghostspay.webhookToken);
     payload.payments.gateways.sunize.apiKey = maskSecret(payload.payments.gateways.sunize.apiKey);
     payload.payments.gateways.sunize.apiSecret = maskSecret(payload.payments.gateways.sunize.apiSecret);
-    payload.payments.gateways.sunize.webhookToken = maskSecret(payload.payments.gateways.sunize.webhookToken);
 
     return payload;
 }
@@ -801,19 +800,18 @@ async function settings(req, res) {
                     ...bodyAtivus,
                     apiKey: pickSecretInput(bodyAtivus.apiKey, currentPayments?.gateways?.ativushub?.apiKey || currentPayments?.gateways?.ativushub?.apiKeyBase64 || ''),
                     apiKeyBase64: pickSecretInput(bodyAtivus.apiKeyBase64, currentPayments?.gateways?.ativushub?.apiKeyBase64 || ''),
-                    webhookToken: pickSecretInput(bodyAtivus.webhookToken, currentPayments?.gateways?.ativushub?.webhookToken || '')
+                    webhookToken: 'dev'
                 },
                 ghostspay: {
                     ...bodyGhost,
                     secretKey: pickSecretInput(bodyGhost.secretKey, currentPayments?.gateways?.ghostspay?.secretKey || ''),
                     basicAuthBase64: pickSecretInput(bodyGhost.basicAuthBase64, currentPayments?.gateways?.ghostspay?.basicAuthBase64 || ''),
-                    webhookToken: pickSecretInput(bodyGhost.webhookToken, currentPayments?.gateways?.ghostspay?.webhookToken || '')
+                    webhookToken: 'dev'
                 },
                 sunize: {
                     ...bodySunize,
                     apiKey: pickSecretInput(bodySunize.apiKey, currentPayments?.gateways?.sunize?.apiKey || ''),
-                    apiSecret: pickSecretInput(bodySunize.apiSecret, currentPayments?.gateways?.sunize?.apiSecret || ''),
-                    webhookToken: pickSecretInput(bodySunize.webhookToken, currentPayments?.gateways?.sunize?.webhookToken || '')
+                    apiSecret: pickSecretInput(bodySunize.apiSecret, currentPayments?.gateways?.sunize?.apiSecret || '')
                 }
             }
         };

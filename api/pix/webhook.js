@@ -433,8 +433,11 @@ module.exports = async (req, res) => {
     const token = String(req.query?.token || '').trim();
     const headerToken = String(req.headers?.['x-webhook-token'] || '').trim();
     const expectedToken = String(gatewayConfig.webhookToken || '').trim();
+    const tokenRequired = gatewayConfig.webhookTokenRequired !== false;
     const fallbackAllowed = gateway === 'ativushub' && gatewayConfig.webhookAllowFallback === true;
-    const tokenOk = expectedToken
+    const tokenOk = !tokenRequired
+        ? true
+        : expectedToken
         ? ((token && token === expectedToken) || (headerToken && headerToken === expectedToken))
         : true;
     if (!tokenOk && !(fallbackAllowed && looksLikeAtivusWebhook(body))) {
