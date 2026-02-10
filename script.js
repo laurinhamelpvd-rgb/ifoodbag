@@ -175,7 +175,7 @@ function setupGlobalBackRedirect(page) {
     if (!page || page === 'admin') return;
     if (page === 'pix') return;
 
-    const offerKey = 'ifoodbag.backRedirectShown';
+    const offerKey = `ifoodbag.backRedirectShown:${page}`;
     let allowBack = false;
 
     const modalEls = ensureCouponModalElements();
