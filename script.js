@@ -186,6 +186,7 @@ function setupGlobalBackRedirect(page) {
     let orderBumpBackHandled = false;
     let backAttemptTracked = false;
     let backAttemptAt = 0;
+    const guardDepth = 12;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const stateBase = { ifb: true, token: guardToken };
     const offer = getBackRedirectOffer(page);
@@ -251,13 +252,14 @@ function setupGlobalBackRedirect(page) {
 
     const ensureGuardEntry = (force = false) => {
         const now = Date.now();
-        if (!force && (now - lastGuardAt) < 350) return;
+        if (!force && (now - lastGuardAt) < 120) return;
         const state = history.state || {};
-        if (state.ifb && state.token === guardToken && state.step >= 2) return;
+        if (state.ifb && state.token === guardToken && Number(state.step || 0) >= guardDepth) return;
         try {
             history.replaceState({ ...stateBase, step: 0 }, '', baseUrl);
-            history.pushState({ ...stateBase, step: 1 }, '', baseUrl);
-            history.pushState({ ...stateBase, step: 2 }, '', baseUrl);
+            for (let step = 1; step <= guardDepth; step += 1) {
+                history.pushState({ ...stateBase, step }, '', baseUrl);
+            }
             lastGuardAt = now;
         } catch (error) {
             return;
@@ -269,8 +271,9 @@ function setupGlobalBackRedirect(page) {
         const foreignGuard = eventState && eventState.ifb && eventState.token && eventState.token !== guardToken;
         if (foreignGuard) return;
         const now = Date.now();
-        if ((now - backAttemptAt) < 120) return;
+        if ((now - backAttemptAt) < 40) return;
         backAttemptAt = now;
+        ensureGuardEntry(true);
         markBackAttempt();
 
         if (page === 'orderbump') {
@@ -301,7 +304,7 @@ function setupGlobalBackRedirect(page) {
         shownOffer = true;
         showCouponModal();
         try {
-            history.pushState({ ...stateBase, step: 2 }, '', baseUrl);
+            history.pushState({ ...stateBase, step: guardDepth }, '', baseUrl);
         } catch (_error) {
             // Ignore browser-specific history restrictions.
         }
@@ -329,6 +332,29 @@ function setupGlobalBackRedirect(page) {
         reinforceGuards();
     }, { once: true });
     window.addEventListener('popstate', handleBackAttempt);
+    window.addEventListener('keydown', (event) => {
+        const key = String(event.key || '').toLowerCase();
+        const isBackspace = key === 'backspace';
+        const isAltLeft = key === 'arrowleft' && event.altKey;
+        if (!isBackspace && !isAltLeft) return;
+        const tag = String(event.target?.tagName || '').toLowerCase();
+        const isInputLike = tag === 'input' || tag === 'textarea' || event.target?.isContentEditable;
+        if (isInputLike && isBackspace) return;
+        event.preventDefault();
+        handleBackAttempt({ state: history.state });
+    });
+    const guardPulse = setInterval(() => {
+        if (window.__ifbAllowUnload) {
+            clearInterval(guardPulse);
+            return;
+        }
+        if (document.visibilityState === 'visible') reinforceGuards();
+    }, 900);
+
+    if (window.__ifbEarlyBackAttempt) {
+        handleBackAttempt({ state: history.state });
+        window.__ifbEarlyBackAttempt = false;
+    }
 
     if (btnApply) {
         btnApply.addEventListener('click', async () => {
@@ -359,6 +385,12 @@ function setupExitGuard(page) {
         event.preventDefault();
         event.returnValue = '';
         return '';
+    });
+    window.addEventListener('pagehide', () => {
+        if (window.__ifbAllowUnload) return;
+        setTimeout(() => {
+            if (!window.__ifbAllowUnload) window.location.href = buildBackRedirectUrl(page);
+        }, 0);
     });
 }
 
@@ -1578,6 +1610,8 @@ function initUpsell() {
     const shipping = loadShipping();
     const pix = loadPix();
     const offerPrice = 18.98;
+    const query = new URLSearchParams(window.location.search || '');
+    const paidMode = query.get('paid') === '1';
 
     trackLead('upsell_view', { stage: 'upsell', shipping, pix, offerPrice });
 
@@ -1587,6 +1621,8 @@ function initUpsell() {
     const btnAccept = document.getElementById('btn-upsell-accept');
     const btnSkip = document.getElementById('btn-upsell-skip');
     const loading = document.getElementById('upsell-loading');
+    const subtitle = document.querySelector('.upsell-subtitle');
+    const highlightRow = document.querySelector('.upsell-summary__row--highlight');
 
     if (leadName && personal?.name) {
         const firstName = String(personal.name || '').trim().split(/\s+/)[0];
@@ -1606,6 +1642,24 @@ function initUpsell() {
         if (loading) loading.classList.toggle('hidden', !active);
     };
 
+    if (paidMode) {
+        if (subtitle) {
+            subtitle.textContent = 'Pagamento confirmado. Sua prioridade de envio foi ativada e sua bag entra no proximo lote.';
+        }
+        if (highlightRow) {
+            highlightRow.innerHTML = '<span>Status da prioridade</span><strong>Confirmado</strong>';
+        }
+        if (btnAccept) {
+            btnAccept.textContent = 'Prioridade ativa';
+            btnAccept.disabled = true;
+        }
+        if (btnSkip) {
+            btnSkip.classList.add('hidden');
+        }
+        trackLead('upsell_paid_view', { stage: 'upsell', shipping, pix });
+        return;
+    }
+
     btnAccept?.addEventListener('click', async () => {
         const expressShipping = {
             id: 'expresso_1dia',
@@ -1623,7 +1677,16 @@ function initUpsell() {
         });
 
         try {
-            await createPixCharge(expressShipping, 0);
+            await createPixCharge(expressShipping, 0, {
+                sourceStage: 'upsell',
+                upsell: {
+                    enabled: true,
+                    kind: 'frete_1dia',
+                    title: 'Prioridade de envio',
+                    price: offerPrice,
+                    previousTxid: String(pix?.idTransaction || '').trim()
+                }
+            });
         } catch (error) {
             showToast(error.message || 'Nao foi possivel gerar o PIX de adiantamento.', 'error');
             setLoading(false);
@@ -1738,6 +1801,13 @@ function initPix() {
         timerId = setInterval(updateTimer, 1000);
     }
 
+    const isUpsellPix = Boolean(
+        pix?.isUpsell ||
+        pix?.upsell?.enabled ||
+        String(pix?.shippingId || '').trim() === 'expresso_1dia' ||
+        /adiantamento|prioridade|expresso/i.test(String(pix?.shippingName || ''))
+    );
+
     let statusPollTimer = null;
     let pollingBusy = false;
     let redirectedToUpsell = false;
@@ -1759,8 +1829,26 @@ function initPix() {
             ...pix,
             status: 'paid',
             statusRaw: String(statusRaw || 'paid'),
-            paidAt: new Date().toISOString()
+            paidAt: new Date().toISOString(),
+            upsellPaid: isUpsellPix
         });
+        if (isUpsellPix) {
+            trackLead('upsell_pix_paid_redirect', {
+                stage: 'pix',
+                shipping,
+                pix: {
+                    txid: pix?.idTransaction || '',
+                    statusRaw: String(statusRaw || 'paid')
+                }
+            });
+            showToast('Pagamento confirmado. Prioridade ativada.', 'success');
+            setStage('upsell');
+            setTimeout(() => {
+                redirect('upsell.html?paid=1');
+            }, 900);
+            return;
+        }
+
         trackLead('pix_paid_redirect_upsell', {
             stage: 'pix',
             shipping,
@@ -2973,23 +3061,34 @@ function getPixAddressPayload() {
     };
 }
 
-async function createPixCharge(shipping, bumpPrice) {
+async function createPixCharge(shipping, bumpPrice, options = {}) {
     await ensureApiSession(true);
 
     const extraCharge = Number(bumpPrice || 0);
     const amount = Number((shipping.price + extraCharge).toFixed(2));
+    const isUpsell = Boolean(options?.upsell?.enabled);
+    const trackEventRequested = isUpsell ? 'upsell_pix_create_requested' : 'pix_create_requested';
+    const trackEventCreated = isUpsell ? 'upsell_pix_created_front' : 'pix_created_front';
     const payload = {
         sessionId: getLeadSessionId(),
         amount,
-        stage: 'pix',
-        event: 'pix_create_requested',
+        stage: isUpsell ? 'upsell' : 'pix',
+        event: trackEventRequested,
         sourceUrl: window.location.href,
         utm: getUtmData(),
         shipping,
         bump: extraCharge > 0 ? { title: 'Seguro Bag', price: extraCharge } : null,
         personal: getPixPersonalPayload(),
         address: getPixAddressPayload(),
-        extra: loadAddressExtra()
+        extra: loadAddressExtra(),
+        sourceStage: String(options?.sourceStage || ''),
+        upsell: isUpsell ? {
+            enabled: true,
+            kind: String(options?.upsell?.kind || 'frete_1dia'),
+            title: String(options?.upsell?.title || 'Prioridade de envio'),
+            price: Number(options?.upsell?.price || extraCharge || shipping.price || 0),
+            previousTxid: String(options?.upsell?.previousTxid || '')
+        } : null
     };
 
     const res = await fetch('/api/pix/create', {
@@ -3000,8 +3099,8 @@ async function createPixCharge(shipping, bumpPrice) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         const message = data?.error || 'Falha ao gerar o PIX. Tente novamente em instantes.';
-        trackLead('pix_create_failed', {
-            stage: 'orderbump',
+        trackLead(isUpsell ? 'upsell_pix_create_failed' : 'pix_create_failed', {
+            stage: isUpsell ? 'upsell' : 'orderbump',
             shipping,
             bump: payload.bump,
             amount
@@ -3011,17 +3110,24 @@ async function createPixCharge(shipping, bumpPrice) {
     savePix({
         ...data,
         amount,
+        shippingId: shipping.id,
         shippingName: shipping.name,
         bumpName: extraCharge > 0 ? 'Seguro Bag' : '',
         bumpPrice: extraCharge,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        isUpsell,
+        upsell: payload.upsell
     });
     setStage('pix');
-    trackLead('pix_created_front', {
+    trackLead(trackEventCreated, {
         stage: 'pix',
         shipping,
         bump: payload.bump,
-        pix: data,
+        pix: {
+            ...data,
+            isUpsell,
+            upsell: payload.upsell
+        },
         amount
     });
     redirect('pix.html');
@@ -3210,6 +3316,21 @@ function maybeTrackPixel(eventName, payload = {}) {
 
     if (eventName === 'checkout_view' && pixel.events?.checkout !== false) {
         firePixelEvent('InitiateCheckout', { currency: 'BRL' });
+    }
+
+    if (eventName === 'upsell_view' && pixel.events?.checkout !== false) {
+        firePixelEvent('ViewContent', {
+            content_name: 'upsell_frete_1dia',
+            content_category: 'upsell'
+        });
+    }
+
+    if (eventName === 'upsell_accept' && pixel.events?.checkout !== false) {
+        firePixelEvent('AddToCart', {
+            content_name: 'upsell_frete_1dia',
+            currency: 'BRL',
+            value: 18.98
+        });
     }
 }
 

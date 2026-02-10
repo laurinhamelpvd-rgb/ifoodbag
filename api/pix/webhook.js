@@ -85,6 +85,15 @@ function isDuplicateForLead(leadData, { webhookSignature, statusRaw, statusChang
     );
 }
 
+function isUpsellLead(leadData) {
+    const payload = asObject(leadData?.payload);
+    const shippingId = String(leadData?.shipping_id || payload?.shipping?.id || payload?.shippingId || '').trim().toLowerCase();
+    const shippingName = String(leadData?.shipping_name || payload?.shipping?.name || payload?.shippingName || '').trim().toLowerCase();
+    if (payload?.upsell?.enabled === true || payload?.isUpsell === true) return true;
+    if (shippingId === 'expresso_1dia') return true;
+    return /adiantamento|prioridade|expresso/.test(shippingName);
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.status(405).json({ status: 'method_not_allowed' });
@@ -295,7 +304,14 @@ module.exports = async (req, res) => {
             ''
         ).trim();
 
-    const eventName = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_failed' : 'pix_created';
+    const upsellEvent = isUpsellLead(leadData);
+    const eventName = isPaid
+        ? (upsellEvent ? 'upsell_pix_confirmed' : 'pix_confirmed')
+        : isRefunded
+            ? 'pix_refunded'
+            : isRefused
+                ? 'pix_failed'
+                : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
     const dedupeBase = txid || orderId || 'unknown';
     const shouldSendUtmStatus = Boolean(orderId || txid) && previousLastEvent !== lastEvent;
     const shouldTriggerPaidSideEffects = Boolean(isPaid && txid) && previousLastEvent !== 'pix_confirmed';
@@ -303,7 +319,7 @@ module.exports = async (req, res) => {
     if (shouldSendUtmStatus) {
         const utmPayload = {
             event: 'pix_status',
-            orderId,
+            orderId: txid || orderId,
             txid,
             status: utmifyStatus,
             amount,
@@ -334,6 +350,12 @@ module.exports = async (req, res) => {
                 title: 'Seguro Bag',
                 price: leadData.bump_price
             } : null,
+            upsell: upsellEvent ? {
+                enabled: true,
+                kind: asObject(leadData?.payload).upsell?.kind || 'frete_1dia',
+                title: asObject(leadData?.payload).upsell?.title || leadData?.shipping_name || 'Prioridade de envio',
+                price: Number(asObject(leadData?.payload).upsell?.price || leadData?.shipping_price || amount || 0)
+            } : null,
             utm: leadData ? {
                 utm_source: leadData.utm_source,
                 utm_medium: leadData.utm_medium,
@@ -363,7 +385,7 @@ module.exports = async (req, res) => {
         const utmJob = {
             channel: 'utmfy',
             eventName,
-            dedupeKey: `utmfy:status:${dedupeBase}:${utmifyStatus}`,
+            dedupeKey: `utmfy:status:${dedupeBase}:${upsellEvent ? 'upsell' : 'base'}:${utmifyStatus}`,
             payload: utmPayload
         };
 
@@ -388,18 +410,21 @@ module.exports = async (req, res) => {
         ).trim();
         const pushPayload = {
             txid,
-            orderId: orderIdForPush,
+            orderId: txid || orderIdForPush,
             status: statusRaw || 'confirmed',
             amount,
             customerName: leadData?.name || body?.client_name || body?.nome || '',
             customerEmail: leadData?.email || body?.client_email || body?.email || '',
-            cep: leadData?.cep || ''
+            cep: leadData?.cep || '',
+            shippingName: leadData?.shipping_name || '',
+            isUpsell: upsellEvent
         };
-        const pushImmediate = await sendPushcut('pix_confirmed', pushPayload).catch(() => ({ ok: false }));
+        const pushKind = upsellEvent ? 'upsell_pix_confirmed' : 'pix_confirmed';
+        const pushImmediate = await sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false }));
         if (!pushImmediate?.ok) {
             enqueueDispatch({
                 channel: 'pushcut',
-                kind: 'pix_confirmed',
+                kind: pushKind,
                 dedupeKey: `pushcut:pix_confirmed:${txid}`,
                 payload: pushPayload
             }).then(() => processDispatchQueue(10)).catch(() => null);
@@ -411,6 +436,9 @@ module.exports = async (req, res) => {
             dedupeKey: `pixel:purchase:${txid}`,
             payload: {
                 amount,
+                orderId: txid || orderIdForPush,
+                shippingName: leadData?.shipping_name || '',
+                isUpsell: upsellEvent,
                 client_email: body?.client_email || leadData?.email,
                 client_document: body?.client_document || leadData?.cpf,
                 client_ip: clientIp,

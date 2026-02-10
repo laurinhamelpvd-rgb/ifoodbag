@@ -161,8 +161,13 @@ function resolveEventTime(row, payload) {
 function mapLeadReadable(row) {
     const payload = asObject(row?.payload);
     const isPaid = isLeadPaid(row, payload);
+    const isUpsell = Boolean(
+        payload?.upsell?.enabled === true ||
+        String(row?.shipping_id || '').trim().toLowerCase() === 'expresso_1dia' ||
+        /adiantamento|prioridade|expresso/i.test(String(row?.shipping_name || ''))
+    );
     const statusFunil = isPaid
-        ? 'pagamento_confirmado'
+        ? (isUpsell ? 'upsell_pagamento_confirmado' : 'pagamento_confirmado')
         : row?.last_event === 'pix_refunded'
             ? 'pix_estornado'
             : row?.last_event === 'pix_refused'
@@ -196,6 +201,7 @@ function mapLeadReadable(row) {
         valor_seguro: row?.bump_price ?? null,
         pix_txid: row?.pix_txid || '-',
         valor_total: row?.pix_amount ?? null,
+        is_upsell: isUpsell,
         utm_source: row?.utm_source || '-',
         utm_campaign: row?.utm_campaign || '-',
         fbclid: row?.fbclid || '-',
@@ -905,6 +911,11 @@ async function pixReconcile(req, res) {
                     leadData = lead?.ok ? lead.data : null;
                 }
                 const leadUtm = leadData?.payload?.utm || {};
+                const isUpsell = Boolean(
+                    leadData?.payload?.upsell?.enabled === true ||
+                    String(leadData?.shipping_id || '').trim().toLowerCase() === 'expresso_1dia' ||
+                    /adiantamento|prioridade|expresso/i.test(String(leadData?.shipping_name || ''))
+                );
                 const changedRows = up?.ok ? Number(up?.count || 0) : 0;
                 if (changedRows > 0) {
                     updated += changedRows;
@@ -919,7 +930,7 @@ async function pixReconcile(req, res) {
                     const userCommission = Number(data?.deposito_liquido || data?.valor_liquido || 0);
                     const utmPayload = {
                         event: 'pix_status',
-                        orderId: leadData?.session_id || sessionIdFallback || '',
+                        orderId: txid || leadData?.session_id || sessionIdFallback || '',
                         txid,
                         status: utmifyStatus,
                         amount,
@@ -945,6 +956,12 @@ async function pixReconcile(req, res) {
                             title: 'Seguro Bag',
                             price: leadData.bump_price
                         } : null,
+                        upsell: isUpsell ? {
+                            enabled: true,
+                            kind: leadData?.payload?.upsell?.kind || 'frete_1dia',
+                            title: leadData?.payload?.upsell?.title || leadData?.shipping_name || 'Prioridade de envio',
+                            price: Number(leadData?.payload?.upsell?.price || leadData?.shipping_price || amount || 0)
+                        } : null,
                         utm: leadData ? {
                             utm_source: leadData.utm_source,
                             utm_medium: leadData.utm_medium,
@@ -966,30 +983,34 @@ async function pixReconcile(req, res) {
                         totalPriceInCents: Math.round(amount * 100)
                     };
 
-                    const utmImmediate = await sendUtmfy('pix_status', utmPayload).catch(() => ({ ok: false }));
+                    const utmEventName = isUpsell && isPaid ? 'upsell_pix_confirmed' : 'pix_status';
+                    const utmImmediate = await sendUtmfy(utmEventName, utmPayload).catch(() => ({ ok: false }));
                     if (!utmImmediate?.ok) {
                         await enqueueDispatch({
                         channel: 'utmfy',
-                        eventName: 'pix_status',
-                        dedupeKey: `utmfy:status:${txid}:${utmifyStatus}`,
+                        eventName: utmEventName,
+                        dedupeKey: `utmfy:status:${txid}:${isUpsell ? 'upsell' : 'base'}:${utmifyStatus}`,
                         payload: utmPayload
                     }).catch(() => null);
                         await processDispatchQueue(8).catch(() => null);
                     }
 
                     if (isPaid) {
+                        const pushKind = isUpsell ? 'upsell_pix_confirmed' : 'pix_confirmed';
                         await enqueueDispatch({
                             channel: 'pushcut',
-                            kind: 'pix_confirmed',
+                            kind: pushKind,
                             dedupeKey: `pushcut:pix_confirmed:${txid}`,
                             payload: {
                                 txid,
-                                orderId: leadData?.session_id || sessionIdFallback || '',
+                                orderId: txid || leadData?.session_id || sessionIdFallback || '',
                                 status,
                                 amount,
                                 customerName: leadData?.name || data?.nome || '',
                                 customerEmail: leadData?.email || data?.email || '',
-                                cep: leadData?.cep || ''
+                                cep: leadData?.cep || '',
+                                shippingName: leadData?.shipping_name || '',
+                                isUpsell
                             }
                         }).catch(() => null);
                         await processDispatchQueue(8).catch(() => null);

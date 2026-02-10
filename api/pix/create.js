@@ -37,8 +37,9 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'JSON invalido no corpo da requisicao.' });
         }
 
-        const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump } = rawBody;
+        const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump, upsell = null } = rawBody;
         const value = Number(amount);
+        const upsellEnabled = Boolean(upsell && upsell.enabled);
 
         if (!value || value <= 0) {
             return res.status(400).json({ error: 'Valor do frete invalido.' });
@@ -130,7 +131,12 @@ module.exports = async (req, res) => {
                 cep: zipCode,
                 reference: extra?.reference || '',
                 bumpSelected: !!(bump && bump.price),
-                bumpPrice: bump?.price || 0
+                bumpPrice: bump?.price || 0,
+                upsellEnabled,
+                upsellKind: upsellEnabled ? String(upsell?.kind || 'frete_1dia') : '',
+                upsellTitle: upsellEnabled ? String(upsell?.title || 'Prioridade de envio') : '',
+                upsellPrice: upsellEnabled ? Number(upsell?.price || 0) : 0,
+                previousTxid: upsellEnabled ? String(upsell?.previousTxid || '') : ''
             },
             pix: {
                 expiresInDays: 2
@@ -177,21 +183,29 @@ module.exports = async (req, res) => {
         // Do not block checkout flow on database write.
         upsertLead({
             ...(rawBody || {}),
-            event: 'pix_created',
-            stage: 'pix',
+            event: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
+            stage: upsellEnabled ? 'upsell' : 'pix',
             pixTxid: data.idTransaction || data.idtransaction || '',
             pixAmount: totalAmount,
             pixCreatedAt,
-            pixStatusChangedAt: pixCreatedAt
+            pixStatusChangedAt: pixCreatedAt,
+            upsell: upsellEnabled ? {
+                enabled: true,
+                kind: String(upsell?.kind || 'frete_1dia'),
+                title: String(upsell?.title || 'Prioridade de envio'),
+                price: Number(upsell?.price || totalAmount),
+                previousTxid: String(upsell?.previousTxid || '')
+            } : null
         }, req).catch(() => null);
 
         const txid = data.idTransaction || data.idtransaction || '';
+        const utmOrderId = txid || orderId;
         const utmJob = {
             channel: 'utmfy',
-            eventName: 'pix_created',
+            eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
             dedupeKey: txid ? `utmfy:pix_created:${txid}` : null,
             payload: {
-                orderId,
+                orderId: utmOrderId,
                 amount: totalAmount,
                 sessionId: rawBody.sessionId || '',
                 personal,
@@ -200,12 +214,18 @@ module.exports = async (req, res) => {
                 utm: rawBody.utm || {},
                 txid,
                 createdAt: pixCreatedAt,
-                status: 'waiting_payment'
+                status: 'waiting_payment',
+                upsell: upsellEnabled ? {
+                    enabled: true,
+                    kind: String(upsell?.kind || 'frete_1dia'),
+                    title: String(upsell?.title || 'Prioridade de envio'),
+                    price: Number(upsell?.price || totalAmount)
+                } : null
             }
         };
 
         // Try immediate send first (server-side), then fallback to queue retry.
-        const utmImmediate = await sendUtmfy('pix_created', utmJob.payload).catch((error) => ({
+        const utmImmediate = await sendUtmfy(utmJob.eventName, utmJob.payload).catch((error) => ({
             ok: false,
             reason: error?.message || 'utmfy_immediate_error'
         }));
@@ -216,22 +236,38 @@ module.exports = async (req, res) => {
 
         const pushPayload = {
             txid,
-            orderId,
+            orderId: utmOrderId,
             amount: totalAmount,
             customerName: name,
             customerEmail: email,
             shippingName: shipping?.name || '',
-            cep: zipCode
+            cep: zipCode,
+            isUpsell: upsellEnabled
         };
-        const pushImmediate = await sendPushcut('pix_created', pushPayload).catch(() => ({ ok: false }));
+        const pushKind = upsellEnabled ? 'upsell_pix_created' : 'pix_created';
+        const pushImmediate = await sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false }));
         if (!pushImmediate?.ok) {
             enqueueDispatch({
                 channel: 'pushcut',
-                kind: 'pix_created',
+                kind: pushKind,
                 dedupeKey: txid ? `pushcut:pix_created:${txid}` : null,
                 payload: pushPayload
             }).then(() => processDispatchQueue(8)).catch(() => null);
         }
+
+        enqueueDispatch({
+            channel: 'pixel',
+            eventName: 'InitiateCheckout',
+            dedupeKey: txid ? `pixel:initiate_checkout:${txid}` : null,
+            payload: {
+                amount: totalAmount,
+                orderId: utmOrderId,
+                shippingName: shipping?.name || '',
+                isUpsell: upsellEnabled,
+                client_email: email,
+                client_document: cpf
+            }
+        }).then(() => processDispatchQueue(8)).catch(() => null);
 
         return res.status(200).json({
             idTransaction: txid,
