@@ -2,7 +2,7 @@ const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin } = require('../../lib/admin-auth');
 const { getSettings, saveSettings, defaultSettings } = require('../../lib/settings-store');
 const { sendUtmfy } = require('../../lib/utmfy');
-const { updateLeadByPixTxid, getLeadByPixTxid } = require('../../lib/lead-store');
+const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadBySessionId } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
 const { BASE_URL, fetchJson, authHeaders } = require('../../lib/ativus');
 const {
@@ -116,7 +116,73 @@ async function getLeads(req, res) {
     }
 
     const data = await response.json().catch(() => []);
-    res.status(200).json({ data });
+
+    const withSummary = String(req.query.summary || '0') === '1';
+    if (!withSummary) {
+        res.status(200).json({ data });
+        return;
+    }
+
+    const summary = {
+        total: 0,
+        cep: 0,
+        frete: 0,
+        pix: 0,
+        paid: 0,
+        refunded: 0,
+        refused: 0,
+        pending: 0,
+        lastUpdated: null
+    };
+
+    const maxSummaryRows = clamp(req.query.summaryMax || 20000, 1, 50000);
+    const pageSize = 1000;
+    let summaryOffset = 0;
+    let done = false;
+
+    while (!done && summaryOffset < maxSummaryRows) {
+        const u = new URL(`${SUPABASE_URL}/rest/v1/leads_readable`);
+        const take = Math.min(pageSize, maxSummaryRows - summaryOffset);
+        u.searchParams.set('select', 'cep,frete,pix_txid,evento,updated_at');
+        u.searchParams.set('order', 'updated_at.desc');
+        u.searchParams.set('limit', String(take));
+        u.searchParams.set('offset', String(summaryOffset));
+        if (query) {
+            const ilike = `%${query.replace(/%/g, '')}%`;
+            u.searchParams.set('or', `nome.ilike.${ilike},email.ilike.${ilike},telefone.ilike.${ilike},cpf.ilike.${ilike}`);
+        }
+
+        const r = await fetchFn(u.toString(), {
+            headers: {
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (!r.ok) break;
+        const rows = await r.json().catch(() => []);
+        if (!Array.isArray(rows) || rows.length === 0) break;
+
+        rows.forEach((row) => {
+            summary.total += 1;
+            if (String(row?.cep || '').trim() && String(row?.cep || '').trim() !== '-') summary.cep += 1;
+            if (String(row?.frete || '').trim() && String(row?.frete || '').trim() !== '-') summary.frete += 1;
+            if (String(row?.pix_txid || '').trim() && String(row?.pix_txid || '').trim() !== '-') summary.pix += 1;
+
+            const ev = String(row?.evento || '').toLowerCase().trim();
+            if (ev === 'pix_confirmed') summary.paid += 1;
+            else if (ev === 'pix_refunded') summary.refunded += 1;
+            else if (ev === 'pix_refused') summary.refused += 1;
+            else if (ev === 'pix_pending' || ev === 'pix_created') summary.pending += 1;
+
+            if (!summary.lastUpdated && row?.updated_at) summary.lastUpdated = row.updated_at;
+        });
+
+        summaryOffset += rows.length;
+        done = rows.length < take;
+    }
+
+    res.status(200).json({ data, summary });
 }
 
 async function getPages(req, res) {
@@ -433,9 +499,25 @@ async function pixReconcile(req, res) {
                 else if (utmifyStatus === 'waiting_payment') pending += 1;
                 else failed += 1;
                 const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-                const up = await updateLeadByPixTxid(txid, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false }));
-                const lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
-                const leadData = lead?.ok ? lead.data : null;
+                let up = await updateLeadByPixTxid(txid, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+                const sessionIdFallback = String(
+                    data?.externalreference ||
+                    data?.external_reference ||
+                    data?.metadata?.orderId ||
+                    data?.orderId ||
+                    ''
+                ).trim();
+                if ((!up?.ok || Number(up?.count || 0) === 0) && sessionIdFallback) {
+                    const bySession = await updateLeadBySessionId(sessionIdFallback, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+                    if (bySession?.ok) up = bySession;
+                }
+
+                let lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+                let leadData = lead?.ok ? lead.data : null;
+                if (!leadData && sessionIdFallback) {
+                    lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
+                    leadData = lead?.ok ? lead.data : null;
+                }
                 const leadUtm = leadData?.payload?.utm || {};
                 const changedRows = up?.ok ? Number(up?.count || 0) : 0;
                 if (changedRows > 0) {
@@ -449,66 +531,73 @@ async function pixReconcile(req, res) {
                     );
                     const gatewayFee = Number(data?.taxa_deposito || 0) + Number(data?.taxa_adquirente || 0);
                     const userCommission = Number(data?.deposito_liquido || data?.valor_liquido || 0);
-                    enqueueDispatch({
+                    const utmPayload = {
+                        event: 'pix_status',
+                        orderId: leadData?.session_id || sessionIdFallback || '',
+                        txid,
+                        status: utmifyStatus,
+                        amount,
+                        personal: leadData ? {
+                            name: leadData.name,
+                            email: leadData.email,
+                            cpf: leadData.cpf,
+                            phoneDigits: leadData.phone
+                        } : null,
+                        address: leadData ? {
+                            street: leadData.address_line,
+                            neighborhood: leadData.neighborhood,
+                            city: leadData.city,
+                            state: leadData.state,
+                            cep: leadData.cep
+                        } : null,
+                        shipping: leadData ? {
+                            id: leadData.shipping_id,
+                            name: leadData.shipping_name,
+                            price: leadData.shipping_price
+                        } : null,
+                        bump: leadData && leadData.bump_selected ? {
+                            title: 'Seguro Bag',
+                            price: leadData.bump_price
+                        } : null,
+                        utm: leadData ? {
+                            utm_source: leadData.utm_source,
+                            utm_medium: leadData.utm_medium,
+                            utm_campaign: leadData.utm_campaign,
+                            utm_term: leadData.utm_term,
+                            utm_content: leadData.utm_content,
+                            gclid: leadData.gclid,
+                            fbclid: leadData.fbclid,
+                            ttclid: leadData.ttclid,
+                            src: leadUtm.src,
+                            sck: leadUtm.sck
+                        } : leadUtm,
+                        payload: data,
+                        createdAt: leadData?.created_at,
+                        approvedDate: isPaid ? data?.data_transacao || data?.data_registro || null : null,
+                        refundedAt: isRefunded ? data?.data_transacao || data?.data_registro || null : null,
+                        gatewayFeeInCents: Math.round(gatewayFee * 100),
+                        userCommissionInCents: Math.round(userCommission * 100),
+                        totalPriceInCents: Math.round(amount * 100)
+                    };
+
+                    const utmImmediate = await sendUtmfy('pix_status', utmPayload).catch(() => ({ ok: false }));
+                    if (!utmImmediate?.ok) {
+                        await enqueueDispatch({
                         channel: 'utmfy',
                         eventName: 'pix_status',
                         dedupeKey: `utmfy:status:${txid}:${utmifyStatus}`,
-                        payload: {
-                            event: 'pix_status',
-                            orderId: leadData?.session_id || '',
-                            txid,
-                            status: utmifyStatus,
-                            amount,
-                            personal: leadData ? {
-                                name: leadData.name,
-                                email: leadData.email,
-                                cpf: leadData.cpf,
-                                phoneDigits: leadData.phone
-                            } : null,
-                            address: leadData ? {
-                                street: leadData.address_line,
-                                neighborhood: leadData.neighborhood,
-                                city: leadData.city,
-                                state: leadData.state,
-                                cep: leadData.cep
-                            } : null,
-                            shipping: leadData ? {
-                                id: leadData.shipping_id,
-                                name: leadData.shipping_name,
-                                price: leadData.shipping_price
-                            } : null,
-                            bump: leadData && leadData.bump_selected ? {
-                                title: 'Seguro Bag',
-                                price: leadData.bump_price
-                            } : null,
-                            utm: leadData ? {
-                                utm_source: leadData.utm_source,
-                                utm_medium: leadData.utm_medium,
-                                utm_campaign: leadData.utm_campaign,
-                                utm_term: leadData.utm_term,
-                                utm_content: leadData.utm_content,
-                                gclid: leadData.gclid,
-                                fbclid: leadData.fbclid,
-                                ttclid: leadData.ttclid,
-                                src: leadUtm.src,
-                                sck: leadUtm.sck
-                            } : leadUtm,
-                            payload: data,
-                            createdAt: leadData?.created_at,
-                            approvedDate: isPaid ? data?.data_transacao || data?.data_registro || null : null,
-                            refundedAt: isRefunded ? data?.data_transacao || data?.data_registro || null : null,
-                            gatewayFeeInCents: Math.round(gatewayFee * 100),
-                            userCommissionInCents: Math.round(userCommission * 100),
-                            totalPriceInCents: Math.round(amount * 100)
-                        }
-                    }).then(() => processDispatchQueue(8)).catch(() => null);
+                        payload: utmPayload
+                    }).catch(() => null);
+                        await processDispatchQueue(8).catch(() => null);
+                    }
 
-                    enqueueDispatch({
+                    await enqueueDispatch({
                         channel: 'pushcut',
                         kind: 'pix_confirmed',
                         dedupeKey: `pushcut:pix_confirmed:${txid}`,
                         payload: { txid, status, amount }
-                    }).then(() => processDispatchQueue(8)).catch(() => null);
+                    }).catch(() => null);
+                    await processDispatchQueue(8).catch(() => null);
 
                     if (isPaid) {
                         const forwarded = req?.headers?.['x-forwarded-for'];
@@ -516,12 +605,13 @@ async function pixReconcile(req, res) {
                             ? forwarded.split(',')[0].trim()
                             : req?.socket?.remoteAddress || '';
                         const userAgent = req?.headers?.['user-agent'] || '';
-                        enqueueDispatch({
+                        await enqueueDispatch({
                             channel: 'pixel',
                             eventName: 'Purchase',
                             dedupeKey: `pixel:purchase:${txid}`,
                             payload: { amount, client_ip: clientIp, user_agent: userAgent }
-                        }).then(() => processDispatchQueue(8)).catch(() => null);
+                        }).catch(() => null);
+                        await processDispatchQueue(8).catch(() => null);
                     }
                 }
             } else {

@@ -11,6 +11,7 @@ const {
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
+const { sendUtmfy } = require('../../lib/utmfy');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -180,7 +181,7 @@ module.exports = async (req, res) => {
         }, req).catch(() => null);
 
         const txid = data.idTransaction || data.idtransaction || '';
-        enqueueDispatch({
+        const utmJob = {
             channel: 'utmfy',
             eventName: 'pix_created',
             dedupeKey: txid ? `utmfy:pix_created:${txid}` : null,
@@ -196,7 +197,17 @@ module.exports = async (req, res) => {
                 createdAt: Date.now(),
                 status: 'waiting_payment'
             }
-        }).then(() => processDispatchQueue(8)).catch(() => null);
+        };
+
+        // Try immediate send first (server-side), then fallback to queue retry.
+        const utmImmediate = await sendUtmfy('pix_created', utmJob.payload).catch((error) => ({
+            ok: false,
+            reason: error?.message || 'utmfy_immediate_error'
+        }));
+        if (!utmImmediate?.ok) {
+            await enqueueDispatch(utmJob).catch(() => null);
+            await processDispatchQueue(8).catch(() => null);
+        }
 
         enqueueDispatch({
             channel: 'pushcut',

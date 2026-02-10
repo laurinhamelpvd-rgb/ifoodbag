@@ -1,6 +1,7 @@
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
+const { sendUtmfy } = require('../../lib/utmfy');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -51,16 +52,25 @@ module.exports = async (req, res) => {
         };
 
         if (fullPayload.event === 'checkout_submit') {
-            enqueueDispatch({
+            const checkoutPayload = {
+                ...fullPayload,
+                orderId: fullPayload.sessionId || '',
+                createdAt: Date.now(),
+                status: 'waiting_payment'
+            };
+            const utmImmediate = await sendUtmfy('checkout', checkoutPayload).catch((error) => ({
+                ok: false,
+                reason: error?.message || 'utmfy_immediate_error'
+            }));
+
+            if (!utmImmediate?.ok) {
+                await enqueueDispatch({
                 channel: 'utmfy',
                 eventName: 'checkout',
-                payload: {
-                    ...fullPayload,
-                    orderId: fullPayload.sessionId || '',
-                    createdAt: Date.now(),
-                    status: 'waiting_payment'
-                }
-            }).then(() => processDispatchQueue(12)).catch(() => null);
+                payload: checkoutPayload
+                }).catch(() => null);
+                await processDispatchQueue(12).catch(() => null);
+            }
         }
 
         const result = await upsertLead(body, req);

@@ -2292,6 +2292,18 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     box-shadow: 0 26px 56px rgba(10, 14, 24, 0.34);
 }
 
+.coupon-hero {
+    margin: -6px auto 12px;
+    width: min(220px, 72%);
+}
+
+.coupon-hero img {
+    width: 100%;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 16px 20px rgba(0, 0, 0, 0.22));
+}
+
 .modal-card h3 {
     margin: 4px 0 10px;
     font-size: 1.36rem;
@@ -2312,6 +2324,57 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     align-items: center;
     margin-bottom: 10px;
     font-size: 1.16rem;
+}
+
+.coupon-anim-in {
+    animation: couponOverlayIn 300ms ease-out;
+}
+
+.coupon-anim-in .modal-card {
+    animation: couponCardIn 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.coupon-anim-in .coupon-hero img {
+    animation: couponBagIn 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes couponOverlayIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes couponCardIn {
+    0% {
+        opacity: 0;
+        transform: translateY(26px) scale(0.92);
+    }
+    65% {
+        opacity: 1;
+        transform: translateY(-4px) scale(1.015);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes couponBagIn {
+    0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.88);
+    }
+    75% {
+        opacity: 1;
+        transform: translateY(-3px) scale(1.04);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .coupon-subtitle {

@@ -127,6 +127,9 @@ select
   coalesce(fbclid, '-') as fbclid,
   coalesce(gclid, '-') as gclid,
   case
+    when last_event = 'pix_confirmed' then 'pagamento_confirmado'
+    when last_event = 'pix_refunded' then 'pix_estornado'
+    when last_event = 'pix_refused' then 'pix_recusado'
     when pix_txid is not null then 'pix_gerado'
     when shipping_id is not null then 'frete_selecionado'
     when cep is not null then 'cep_confirmado'

