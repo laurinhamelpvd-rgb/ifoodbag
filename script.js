@@ -174,11 +174,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupGlobalBackRedirect(page) {
     if (!page || page === 'admin') return;
+    if (page === 'pix') return;
     if (window.__ifoodBackRedirectInit) return;
     window.__ifoodBackRedirectInit = true;
 
     const targetUrl = buildBackRedirectUrl();
     let shownOffer = false;
+    let orderBumpBackHandled = false;
+    const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     const modalEls = ensureCouponModalElements();
     const modal = modalEls.modal;
@@ -205,6 +208,27 @@ function setupGlobalBackRedirect(page) {
     };
 
     const handlePop = () => {
+        if (page === 'orderbump') {
+            if (orderBumpBackHandled) return;
+            orderBumpBackHandled = true;
+            const shipping = loadShipping();
+            if (!shipping) {
+                window.location.href = targetUrl;
+                return;
+            }
+            trackLead('orderbump_back_skip', { stage: 'orderbump', shipping });
+            saveBump({
+                selected: false,
+                price: 9.9,
+                title: 'Seguro Bag',
+                skippedByBack: true
+            });
+            createPixCharge(shipping, 0).catch(() => {
+                window.location.href = targetUrl;
+            });
+            return;
+        }
+
         if (shownOffer) {
             window.location.href = targetUrl;
             return;
@@ -215,8 +239,10 @@ function setupGlobalBackRedirect(page) {
     };
 
     const pushHistoryGuards = () => {
-        history.pushState({}, '', location.href);
-        history.pushState({}, '', location.href);
+        const stateBase = { ifb: true, token: guardToken };
+        history.replaceState({ ...stateBase, step: 0 }, '', location.href);
+        history.pushState({ ...stateBase, step: 1 }, '', location.href);
+        history.pushState({ ...stateBase, step: 2 }, '', location.href);
     };
 
     pushHistoryGuards();
@@ -235,6 +261,9 @@ function setupGlobalBackRedirect(page) {
             pushHistoryGuards();
         }
     });
+    window.addEventListener('load', () => {
+        reinforceGuards();
+    }, { once: true });
     window.addEventListener('popstate', handlePop);
 
     if (btnApply) {
