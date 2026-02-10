@@ -884,6 +884,13 @@ body[data-page='orderbump'] .step {
     -webkit-appearance: none;
 }
 
+.floating-input--textarea {
+    min-height: 92px;
+    height: 92px;
+    padding-top: 22px;
+    resize: vertical;
+}
+
 .floating-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(234, 29, 44, 0.12);

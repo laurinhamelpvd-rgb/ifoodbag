@@ -140,7 +140,24 @@
               <input type="url" id="pushcut-pix-confirmed" class="floating-input" placeholder=" " />
               <label for="pushcut-pix-confirmed" class="floating-label">URL pagamento confirmado</label>
             </div>
+            <div class="input-group">
+              <input type="text" id="pushcut-created-title" class="floating-input" placeholder=" " />
+              <label for="pushcut-created-title" class="floating-label">Titulo PIX gerado</label>
+            </div>
+            <div class="input-group">
+              <textarea id="pushcut-created-message" class="floating-input floating-input--textarea" placeholder=" "></textarea>
+              <label for="pushcut-created-message" class="floating-label">Mensagem PIX gerado</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="pushcut-confirmed-title" class="floating-input" placeholder=" " />
+              <label for="pushcut-confirmed-title" class="floating-label">Titulo PIX pago</label>
+            </div>
+            <div class="input-group">
+              <textarea id="pushcut-confirmed-message" class="floating-input floating-input--textarea" placeholder=" "></textarea>
+              <label for="pushcut-confirmed-message" class="floating-label">Mensagem PIX pago</label>
+            </div>
           </div>
+          <p class="admin-hint">Placeholders disponiveis: <code>{amount}</code>, <code>{name}</code>, <code>{orderId}</code>, <code>{txid}</code>, <code>{status}</code>, <code>{cep}</code>.</p>
           <div class="admin-inline-actions">
             <button id="admin-test-pushcut" class="btn-secondary" type="button">Testar Pushcut</button>
             <span id="admin-test-pushcut-status" class="admin-muted"></span>

@@ -215,7 +215,10 @@ module.exports = async (req, res) => {
             dedupeKey: txid ? `pushcut:pix_created:${txid}` : null,
             payload: {
                 txid,
+                orderId,
                 amount: totalAmount,
+                customerName: name,
+                customerEmail: email,
                 shippingName: shipping?.name || '',
                 cep: zipCode
             }

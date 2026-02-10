@@ -199,11 +199,26 @@ module.exports = async (req, res) => {
     }
 
     if (isPaid && txid) {
+        const orderIdForPush = String(
+            leadData?.session_id ||
+            sessionOrderId ||
+            body?.metadata?.orderId ||
+            body?.orderId ||
+            ''
+        ).trim();
         enqueueDispatch({
             channel: 'pushcut',
             kind: 'pix_confirmed',
             dedupeKey: `pushcut:pix_confirmed:${txid}`,
-            payload: { txid, status: statusRaw || 'confirmed', amount }
+            payload: {
+                txid,
+                orderId: orderIdForPush,
+                status: statusRaw || 'confirmed',
+                amount,
+                customerName: leadData?.name || body?.client_name || body?.nome || '',
+                customerEmail: leadData?.email || body?.client_email || body?.email || '',
+                cep: leadData?.cep || ''
+            }
         }).then(() => processDispatchQueue(10)).catch(() => null);
 
         enqueueDispatch({

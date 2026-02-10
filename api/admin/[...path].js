@@ -290,7 +290,11 @@ async function settings(req, res) {
             },
             pushcut: {
                 ...defaultSettings.pushcut,
-                ...(body.pushcut || {})
+                ...(body.pushcut || {}),
+                templates: {
+                    ...defaultSettings.pushcut.templates,
+                    ...(body.pushcut?.templates || {})
+                }
             },
             features: {
                 ...defaultSettings.features,
@@ -401,7 +405,13 @@ async function pushcutTest(req, res) {
     const txid = `pushcut-test-${Date.now()}`;
     const basePayload = {
         txid,
+        orderId: `order-${Date.now()}`,
         amount: 56.1,
+        name: 'Lead Teste',
+        customerName: 'Lead Teste',
+        customerEmail: 'lead.teste@ifoodbag.app',
+        cep: '08717630',
+        shippingName: 'Envio Padrao iFood',
         source: 'admin_test',
         created_at: new Date().toISOString()
     };
@@ -593,15 +603,23 @@ async function pixReconcile(req, res) {
                         await processDispatchQueue(8).catch(() => null);
                     }
 
-                    await enqueueDispatch({
-                        channel: 'pushcut',
-                        kind: 'pix_confirmed',
-                        dedupeKey: `pushcut:pix_confirmed:${txid}`,
-                        payload: { txid, status, amount }
-                    }).catch(() => null);
-                    await processDispatchQueue(8).catch(() => null);
-
                     if (isPaid) {
+                        await enqueueDispatch({
+                            channel: 'pushcut',
+                            kind: 'pix_confirmed',
+                            dedupeKey: `pushcut:pix_confirmed:${txid}`,
+                            payload: {
+                                txid,
+                                orderId: leadData?.session_id || sessionIdFallback || '',
+                                status,
+                                amount,
+                                customerName: leadData?.name || data?.nome || '',
+                                customerEmail: leadData?.email || data?.email || '',
+                                cep: leadData?.cep || ''
+                            }
+                        }).catch(() => null);
+                        await processDispatchQueue(8).catch(() => null);
+
                         const forwarded = req?.headers?.['x-forwarded-for'];
                         const clientIp = typeof forwarded === 'string' && forwarded
                             ? forwarded.split(',')[0].trim()

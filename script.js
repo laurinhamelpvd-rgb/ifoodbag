@@ -1601,6 +1601,10 @@ function initAdmin() {
     const pushcutEnabled = document.getElementById('pushcut-enabled');
     const pushcutPixCreated = document.getElementById('pushcut-pix-created');
     const pushcutPixConfirmed = document.getElementById('pushcut-pix-confirmed');
+    const pushcutCreatedTitle = document.getElementById('pushcut-created-title');
+    const pushcutCreatedMessage = document.getElementById('pushcut-created-message');
+    const pushcutConfirmedTitle = document.getElementById('pushcut-confirmed-title');
+    const pushcutConfirmedMessage = document.getElementById('pushcut-confirmed-message');
 
     const saveBtn = document.getElementById('admin-save');
     const saveStatus = document.getElementById('admin-save-status');
@@ -1660,7 +1664,18 @@ function initAdmin() {
         pixelEnabled || pixelId || pixelEventPage || pixelEventQuiz || pixelEventLead || pixelEventCheckout || pixelEventPurchase ||
         pixelCapiEnabled || pixelCapiToken || pixelCapiTestCode
     );
-    const hasUtmfyForm = !!(utmfyEnabled || utmfyEndpoint || utmfyApi || pushcutEnabled || pushcutPixCreated || pushcutPixConfirmed);
+    const hasUtmfyForm = !!(
+        utmfyEnabled ||
+        utmfyEndpoint ||
+        utmfyApi ||
+        pushcutEnabled ||
+        pushcutPixCreated ||
+        pushcutPixConfirmed ||
+        pushcutCreatedTitle ||
+        pushcutCreatedMessage ||
+        pushcutConfirmedTitle ||
+        pushcutConfirmedMessage
+    );
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
     const wantsPages = !!pagesGrid;
@@ -1710,6 +1725,10 @@ function initAdmin() {
             if (pushcutEnabled) pushcutEnabled.checked = !!data.pushcut?.enabled;
             if (pushcutPixCreated) pushcutPixCreated.value = data.pushcut?.pixCreatedUrl || '';
             if (pushcutPixConfirmed) pushcutPixConfirmed.value = data.pushcut?.pixConfirmedUrl || '';
+            if (pushcutCreatedTitle) pushcutCreatedTitle.value = data.pushcut?.templates?.pixCreatedTitle || '';
+            if (pushcutCreatedMessage) pushcutCreatedMessage.value = data.pushcut?.templates?.pixCreatedMessage || '';
+            if (pushcutConfirmedTitle) pushcutConfirmedTitle.value = data.pushcut?.templates?.pixConfirmedTitle || '';
+            if (pushcutConfirmedMessage) pushcutConfirmedMessage.value = data.pushcut?.templates?.pixConfirmedMessage || '';
         }
 
         if (hasFeatureForm) {
@@ -1759,7 +1778,14 @@ function initAdmin() {
                 ...(currentSettings?.pushcut || {}),
                 enabled: !!pushcutEnabled?.checked,
                 pixCreatedUrl: pushcutPixCreated?.value?.trim() || '',
-                pixConfirmedUrl: pushcutPixConfirmed?.value?.trim() || ''
+                pixConfirmedUrl: pushcutPixConfirmed?.value?.trim() || '',
+                templates: {
+                    ...(currentSettings?.pushcut?.templates || {}),
+                    pixCreatedTitle: pushcutCreatedTitle?.value?.trim() || '',
+                    pixCreatedMessage: pushcutCreatedMessage?.value?.trim() || '',
+                    pixConfirmedTitle: pushcutConfirmedTitle?.value?.trim() || '',
+                    pixConfirmedMessage: pushcutConfirmedMessage?.value?.trim() || ''
+                }
             };
         }
 
