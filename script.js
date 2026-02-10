@@ -2367,7 +2367,7 @@ function initAdmin() {
                 if (wantsLeads) loadLeads({ reset: true });
                 if (wantsPages) loadPageCounts();
                 if (wantsBackredirects) loadBackredirects();
-            }, 30000);
+            }, 10000);
         } else {
             setLoginVisible(true);
         }
