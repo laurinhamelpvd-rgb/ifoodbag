@@ -1,0 +1,4 @@
+interface:
+  display_name: "GhostsPay PIX"
+  short_description: "Integrar GhostsPay em checkout, SaaS, ofertas e webhooks"
+  default_prompt: "Use $ghostspay-pix para implementar ou corrigir integracao GhostsPay (PIX/cartao/boleto) com webhook confiavel."

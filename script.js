@@ -1941,9 +1941,13 @@ function initPix() {
     }
     if (pixCode) pixCode.value = pix.paymentCode || '';
 
-    if (pixQr && pix.paymentCodeBase64) {
-        const base64 = pix.paymentCodeBase64;
-        pixQr.src = base64.startsWith('data:image') ? base64 : `data:image/png;base64,${base64}`;
+    if (pixQr && (pix.paymentQrUrl || pix.paymentCodeBase64)) {
+        const qrSource = String(pix.paymentQrUrl || pix.paymentCodeBase64 || '').trim();
+        if (/^https?:\/\//i.test(qrSource) || qrSource.startsWith('data:image')) {
+            pixQr.src = qrSource;
+        } else {
+            pixQr.src = `data:image/png;base64,${qrSource}`;
+        }
     }
 
     const handleCopy = async (button) => {
@@ -2111,7 +2115,8 @@ function initPix() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     txid: pix.idTransaction,
-                    sessionId: getLeadSessionId()
+                    sessionId: getLeadSessionId(),
+                    gateway: pix.gateway || pix.pixGateway || ''
                 })
             });
             const data = await res.json().catch(() => ({}));
@@ -2239,6 +2244,17 @@ function initAdmin() {
     const pushcutCreatedMessage = document.getElementById('pushcut-created-message');
     const pushcutConfirmedTitle = document.getElementById('pushcut-confirmed-title');
     const pushcutConfirmedMessage = document.getElementById('pushcut-confirmed-message');
+    const paymentsActiveGateway = document.getElementById('payments-active-gateway');
+    const gatewayAtivushubEnabled = document.getElementById('gateway-ativushub-enabled');
+    const gatewayAtivushubBaseUrl = document.getElementById('gateway-ativushub-base-url');
+    const gatewayAtivushubApiKey = document.getElementById('gateway-ativushub-api-key');
+    const gatewayAtivushubSellerId = document.getElementById('gateway-ativushub-seller-id');
+    const gatewayAtivushubWebhookToken = document.getElementById('gateway-ativushub-webhook-token');
+    const gatewayGhostspayEnabled = document.getElementById('gateway-ghostspay-enabled');
+    const gatewayGhostspayBaseUrl = document.getElementById('gateway-ghostspay-base-url');
+    const gatewayGhostspaySecretKey = document.getElementById('gateway-ghostspay-secret-key');
+    const gatewayGhostspayCompanyId = document.getElementById('gateway-ghostspay-company-id');
+    const gatewayGhostspayWebhookToken = document.getElementById('gateway-ghostspay-webhook-token');
 
     const saveBtn = document.getElementById('admin-save');
     const saveStatus = document.getElementById('admin-save-status');
@@ -2259,6 +2275,12 @@ function initAdmin() {
     const metricConvPix = document.getElementById('metric-conv-pix');
     const metricConvFrete = document.getElementById('metric-conv-frete');
     const metricConvCep = document.getElementById('metric-conv-cep');
+    const metricActiveGateway = document.getElementById('metric-active-gateway');
+    const metricBestGateway = document.getElementById('metric-best-gateway');
+    const metricGatewayAtivushubConv = document.getElementById('metric-gateway-ativushub-conv');
+    const metricGatewayAtivushubDetail = document.getElementById('metric-gateway-ativushub-detail');
+    const metricGatewayGhostspayConv = document.getElementById('metric-gateway-ghostspay-conv');
+    const metricGatewayGhostspayDetail = document.getElementById('metric-gateway-ghostspay-detail');
     const funnelPix = document.getElementById('funnel-pix');
     const funnelFrete = document.getElementById('funnel-frete');
     const funnelCep = document.getElementById('funnel-cep');
@@ -2295,7 +2317,11 @@ function initAdmin() {
         frete: 0,
         cep: 0,
         paid: 0,
-        lastUpdated: ''
+        lastUpdated: '',
+        gatewayStats: {
+            ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+        }
     };
     const funnelPageMeta = {
         home: { label: 'index.html', desc: 'Pagina inicial (entrada do funil)' },
@@ -2328,6 +2354,19 @@ function initAdmin() {
         pushcutCreatedMessage ||
         pushcutConfirmedTitle ||
         pushcutConfirmedMessage
+    );
+    const hasPaymentsForm = !!(
+        paymentsActiveGateway ||
+        gatewayAtivushubEnabled ||
+        gatewayAtivushubBaseUrl ||
+        gatewayAtivushubApiKey ||
+        gatewayAtivushubSellerId ||
+        gatewayAtivushubWebhookToken ||
+        gatewayGhostspayEnabled ||
+        gatewayGhostspayBaseUrl ||
+        gatewayGhostspaySecretKey ||
+        gatewayGhostspayCompanyId ||
+        gatewayGhostspayWebhookToken
     );
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
@@ -2385,6 +2424,31 @@ function initAdmin() {
             if (pushcutCreatedMessage) pushcutCreatedMessage.value = data.pushcut?.templates?.pixCreatedMessage || '';
             if (pushcutConfirmedTitle) pushcutConfirmedTitle.value = data.pushcut?.templates?.pixConfirmedTitle || '';
             if (pushcutConfirmedMessage) pushcutConfirmedMessage.value = data.pushcut?.templates?.pixConfirmedMessage || '';
+        }
+
+        if (hasPaymentsForm) {
+            const payments = data.payments || {};
+            const gateways = payments.gateways || {};
+            const ativushub = gateways.ativushub || {};
+            const ghostspay = gateways.ghostspay || {};
+            const activeGateway = String(payments.activeGateway || 'ativushub').toLowerCase() === 'ghostspay' ? 'ghostspay' : 'ativushub';
+
+            if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
+            if (gatewayAtivushubEnabled) gatewayAtivushubEnabled.checked = ativushub.enabled !== false;
+            if (gatewayAtivushubBaseUrl) gatewayAtivushubBaseUrl.value = ativushub.baseUrl || '';
+            if (gatewayAtivushubApiKey) gatewayAtivushubApiKey.value = ativushub.apiKey || ativushub.apiKeyBase64 || '';
+            if (gatewayAtivushubSellerId) gatewayAtivushubSellerId.value = ativushub.sellerId || '';
+            if (gatewayAtivushubWebhookToken) gatewayAtivushubWebhookToken.value = ativushub.webhookToken || '';
+
+            if (gatewayGhostspayEnabled) gatewayGhostspayEnabled.checked = !!ghostspay.enabled;
+            if (gatewayGhostspayBaseUrl) gatewayGhostspayBaseUrl.value = ghostspay.baseUrl || '';
+            if (gatewayGhostspaySecretKey) gatewayGhostspaySecretKey.value = ghostspay.secretKey || '';
+            if (gatewayGhostspayCompanyId) gatewayGhostspayCompanyId.value = ghostspay.companyId || '';
+            if (gatewayGhostspayWebhookToken) gatewayGhostspayWebhookToken.value = ghostspay.webhookToken || '';
+
+            if (metricActiveGateway) {
+                metricActiveGateway.textContent = activeGateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+            }
         }
 
         if (hasFeatureForm) {
@@ -2457,6 +2521,35 @@ function initAdmin() {
             };
         }
 
+        if (hasPaymentsForm) {
+            const activeGateway = String(paymentsActiveGateway?.value || 'ativushub').toLowerCase() === 'ghostspay'
+                ? 'ghostspay'
+                : 'ativushub';
+            payload.payments = {
+                ...(currentSettings?.payments || {}),
+                activeGateway,
+                gateways: {
+                    ...(currentSettings?.payments?.gateways || {}),
+                    ativushub: {
+                        ...(currentSettings?.payments?.gateways?.ativushub || {}),
+                        enabled: gatewayAtivushubEnabled?.checked !== false,
+                        baseUrl: gatewayAtivushubBaseUrl?.value?.trim() || '',
+                        apiKey: gatewayAtivushubApiKey?.value?.trim() || '',
+                        sellerId: gatewayAtivushubSellerId?.value?.trim() || '',
+                        webhookToken: gatewayAtivushubWebhookToken?.value?.trim() || ''
+                    },
+                    ghostspay: {
+                        ...(currentSettings?.payments?.gateways?.ghostspay || {}),
+                        enabled: !!gatewayGhostspayEnabled?.checked,
+                        baseUrl: gatewayGhostspayBaseUrl?.value?.trim() || '',
+                        secretKey: gatewayGhostspaySecretKey?.value?.trim() || '',
+                        companyId: gatewayGhostspayCompanyId?.value?.trim() || '',
+                        webhookToken: gatewayGhostspayWebhookToken?.value?.trim() || ''
+                    }
+                }
+            };
+        }
+
         if (hasFeatureForm) {
             payload.features = {
                 ...(currentSettings?.features || {}),
@@ -2474,6 +2567,11 @@ function initAdmin() {
             setTimeout(() => {
                 if (saveStatus) saveStatus.textContent = '';
             }, 2500);
+        }
+        if (res.ok && hasPaymentsForm && metricActiveGateway) {
+            metricActiveGateway.textContent = String(paymentsActiveGateway?.value || 'ativushub') === 'ghostspay'
+                ? 'GhostsPay'
+                : 'AtivusHUB';
         }
         saveBtn.disabled = false;
     };
@@ -2633,6 +2731,11 @@ function initAdmin() {
     };
 
     const updateMetrics = (rows, reset = false, summary = null) => {
+        const emptyGatewayStats = () => ({
+            ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+        });
+
         if (summary && typeof summary === 'object') {
             metrics.total = Number(summary.total || 0);
             metrics.pix = Number(summary.pix || 0);
@@ -2640,6 +2743,18 @@ function initAdmin() {
             metrics.cep = Number(summary.cep || 0);
             metrics.paid = Number(summary.paid || 0);
             metrics.lastUpdated = String(summary.lastUpdated || '');
+            const source = summary.gatewayStats || {};
+            const base = emptyGatewayStats();
+            metrics.gatewayStats = {
+                ativushub: {
+                    ...base.ativushub,
+                    ...(source.ativushub || {})
+                },
+                ghostspay: {
+                    ...base.ghostspay,
+                    ...(source.ghostspay || {})
+                }
+            };
         } else {
         if (reset) {
             metrics.total = 0;
@@ -2648,6 +2763,7 @@ function initAdmin() {
             metrics.cep = 0;
             metrics.paid = 0;
             metrics.lastUpdated = '';
+            metrics.gatewayStats = emptyGatewayStats();
         }
 
         metrics.total += rows.length;
@@ -2656,12 +2772,20 @@ function initAdmin() {
             const frete = String(row.frete || '').trim();
             const pixTxid = String(row.pix_txid || '').trim();
             const ev = String(row.evento || '').toLowerCase().trim();
+            const gateway = String(row.gateway || '').toLowerCase() === 'ghostspay' ? 'ghostspay' : 'ativushub';
+            const gatewayStats = metrics.gatewayStats[gateway];
 
+            gatewayStats.leads += 1;
             if (pixTxid && pixTxid !== '-') metrics.pix += 1;
+            if (pixTxid && pixTxid !== '-') gatewayStats.pix += 1;
             if (frete && frete !== '-') metrics.frete += 1;
             if (cep && cep !== '-') metrics.cep += 1;
             const isPaid = row.is_paid === true || ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
             if (isPaid) metrics.paid += 1;
+            if (isPaid) gatewayStats.paid += 1;
+            else if (ev === 'pix_refunded') gatewayStats.refunded += 1;
+            else if (ev === 'pix_refused' || ev === 'pix_failed') gatewayStats.refused += 1;
+            else if (ev === 'pix_pending' || ev === 'pix_created') gatewayStats.pending += 1;
             if (!metrics.lastUpdated && (row.event_time || row.updated_at)) metrics.lastUpdated = row.event_time || row.updated_at;
         });
         }
@@ -2689,6 +2813,37 @@ function initAdmin() {
         if (funnelPixValue) funnelPixValue.textContent = `${pctPix}%`;
         if (funnelFreteValue) funnelFreteValue.textContent = `${pctFrete}%`;
         if (funnelCepValue) funnelCepValue.textContent = `${pctCep}%`;
+
+        const ativusStats = metrics.gatewayStats.ativushub || { pix: 0, paid: 0 };
+        const ghostStats = metrics.gatewayStats.ghostspay || { pix: 0, paid: 0 };
+        const ativusConv = ativusStats.pix ? Math.round((Number(ativusStats.paid || 0) / Number(ativusStats.pix || 0)) * 100) : 0;
+        const ghostConv = ghostStats.pix ? Math.round((Number(ghostStats.paid || 0) / Number(ghostStats.pix || 0)) * 100) : 0;
+
+        if (metricGatewayAtivushubConv) metricGatewayAtivushubConv.textContent = `${ativusConv}%`;
+        if (metricGatewayAtivushubDetail) {
+            metricGatewayAtivushubDetail.textContent = `${Number(ativusStats.paid || 0)} pagos / ${Number(ativusStats.pix || 0)} PIX`;
+        }
+        if (metricGatewayGhostspayConv) metricGatewayGhostspayConv.textContent = `${ghostConv}%`;
+        if (metricGatewayGhostspayDetail) {
+            metricGatewayGhostspayDetail.textContent = `${Number(ghostStats.paid || 0)} pagos / ${Number(ghostStats.pix || 0)} PIX`;
+        }
+
+        if (metricBestGateway) {
+            const options = [
+                { label: 'AtivusHUB', conv: ativusConv, paid: Number(ativusStats.paid || 0), pix: Number(ativusStats.pix || 0) },
+                { label: 'GhostsPay', conv: ghostConv, paid: Number(ghostStats.paid || 0), pix: Number(ghostStats.pix || 0) }
+            ].filter((item) => item.pix > 0);
+            if (!options.length) {
+                metricBestGateway.textContent = '-';
+            } else {
+                options.sort((a, b) => {
+                    if (b.conv !== a.conv) return b.conv - a.conv;
+                    if (b.paid !== a.paid) return b.paid - a.paid;
+                    return b.pix - a.pix;
+                });
+                metricBestGateway.textContent = `${options[0].label} (${options[0].conv}%)`;
+            }
+        }
     };
 
     const loadLeads = async ({ reset = false } = {}) => {
@@ -2878,7 +3033,7 @@ function initAdmin() {
             return;
         }
         setLoginVisible(false);
-        if (hasPixelForm || hasUtmfyForm) await loadSettings();
+        if (hasPixelForm || hasUtmfyForm || hasPaymentsForm || hasFeatureForm) await loadSettings();
         if (wantsLeads) await loadLeads({ reset: true });
         if (wantsPages) await loadPageCounts();
         if (wantsBackredirects) await loadBackredirects();
@@ -2914,7 +3069,7 @@ function initAdmin() {
     checkAuth().then((ok) => {
         if (ok) {
             setLoginVisible(false);
-            if (hasPixelForm || hasUtmfyForm) loadSettings();
+            if (hasPixelForm || hasUtmfyForm || hasPaymentsForm || hasFeatureForm) loadSettings();
             if (wantsLeads) loadLeads({ reset: true });
             if (wantsPages) loadPageCounts();
             if (wantsBackredirects) loadBackredirects();

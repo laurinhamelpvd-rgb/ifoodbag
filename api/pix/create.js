@@ -1,18 +1,80 @@
-const {
-    API_KEY_B64,
-    BASE_URL,
-    fetchJson,
-    authHeaders,
-    sanitizeDigits,
-    extractIp,
-    getSellerId,
-    resolvePostbackUrl
-} = require('../../lib/ativus');
+const { sanitizeDigits, extractIp } = require('../../lib/ativus');
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 const { sendUtmfy } = require('../../lib/utmfy');
 const { sendPushcut } = require('../../lib/pushcut');
+const { getSettings } = require('../../lib/settings-store');
+const { buildPaymentsConfig, normalizeGatewayId } = require('../../lib/payment-gateway-config');
+const {
+    requestCreateTransaction: requestAtivushubCreate,
+    getSellerId: getAtivushubSellerId,
+    resolvePostbackUrl: resolveAtivushubPostbackUrl
+} = require('../../lib/ativushub-provider');
+const {
+    requestCreateTransaction: requestGhostspayCreate,
+    resolvePostbackUrl: resolveGhostspayPostbackUrl
+} = require('../../lib/ghostspay-provider');
+
+function resolveGateway(rawBody = {}, payments = {}) {
+    const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
+    const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
+    const requested = normalizeGatewayId(rawBody.gateway || rawBody.paymentGateway || payments.activeGateway);
+    if (requested === 'ghostspay') {
+        return ghostspayEnabled ? 'ghostspay' : 'ativushub';
+    }
+    if (!ativushubEnabled && ghostspayEnabled) {
+        return 'ghostspay';
+    }
+    return 'ativushub';
+}
+
+function hasGhostspayCredentials(config = {}) {
+    return Boolean(
+        String(config.basicAuthBase64 || '').trim() ||
+        (String(config.secretKey || '').trim() && String(config.companyId || '').trim())
+    );
+}
+
+function resolveGhostspayResponse(data = {}) {
+    const pix = data?.pix || {};
+    const txid = String(
+        data?.id ||
+        data?.transactionId ||
+        data?.transaction_id ||
+        data?.data?.id ||
+        data?.data?.transactionId ||
+        ''
+    ).trim();
+    const paymentCode = String(
+        pix?.qrcodeText ||
+        pix?.qrCodeText ||
+        pix?.copyPaste ||
+        pix?.emv ||
+        data?.paymentCode ||
+        ''
+    ).trim();
+    const qrRaw = String(
+        pix?.qrcode ||
+        pix?.qrCode ||
+        pix?.qrcodeImage ||
+        pix?.qrCodeImage ||
+        ''
+    ).trim();
+
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+
+    const status = String(data?.status || data?.data?.status || '').trim();
+    return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status };
+}
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -26,16 +88,17 @@ module.exports = async (req, res) => {
     }
 
     try {
-        if (!API_KEY_B64) {
-            return res.status(500).json({ error: 'API Key nao configurada.' });
-        }
-
         let rawBody = {};
         try {
             rawBody = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-        } catch (error) {
+        } catch (_error) {
             return res.status(400).json({ error: 'JSON invalido no corpo da requisicao.' });
         }
+
+        const settings = await getSettings().catch(() => ({}));
+        const payments = buildPaymentsConfig(settings?.payments || {});
+        const gateway = resolveGateway(rawBody, payments);
+        const gatewayConfig = payments?.gateways?.[gateway] || {};
 
         const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump, upsell = null } = rawBody;
         const value = Number(amount);
@@ -70,11 +133,10 @@ module.exports = async (req, res) => {
         const streetNumber = extra?.noNumber ? 'S/N' : String(extra?.number || '').trim() || 'S/N';
         const complement = extra?.noComplement ? 'Sem complemento' : String(extra?.complement || '').trim() || 'Sem complemento';
 
-        const sellerId = await getSellerId();
-        const postbackUrl = resolvePostbackUrl(req);
-
         const shippingPrice = Number(shipping?.price || 0);
         const bumpPrice = bump?.price ? Number(bump.price) : 0;
+        const totalAmount = Number((shippingPrice + bumpPrice).toFixed(2));
+        const orderId = rawBody.sessionId || `order_${Date.now()}`;
 
         const items = [
             {
@@ -94,105 +156,174 @@ module.exports = async (req, res) => {
             });
         }
 
-        const totalAmount = Number((shippingPrice + bumpPrice).toFixed(2));
-        const orderId = rawBody.sessionId || `order_${Date.now()}`;
-        const payload = {
-            amount: totalAmount,
-            id_seller: sellerId,
-            customer: {
-                name,
-                email,
-                cpf,
-                phone,
-                externaRef: orderId,
-                address: {
-                    street,
-                    streetNumber,
-                    complement,
-                    zipCode,
-                    neighborhood,
-                    city,
-                    state,
-                    country: 'br'
-                }
-            },
-            checkout: {
-                utm_source: rawBody?.utm?.utm_source || '',
-                utm_medium: rawBody?.utm?.utm_medium || '',
-                utm_campaign: rawBody?.utm?.utm_campaign || '',
-                utm_term: rawBody?.utm?.utm_term || '',
-                utm_content: rawBody?.utm?.utm_content || '',
-                src: rawBody?.utm?.src || '',
-                sck: rawBody?.utm?.sck || ''
-            },
-            items,
-            postbackUrl,
-            ip: extractIp(req),
-            metadata: {
-                orderId,
-                shippingId: shipping?.id || '',
-                shippingName: shipping?.name || '',
-                cep: zipCode,
-                reference: extra?.reference || '',
-                bumpSelected: !!(bump && bump.price),
-                bumpPrice: bump?.price || 0,
-                upsellEnabled,
-                upsellKind: upsellEnabled ? String(upsell?.kind || 'frete_1dia') : '',
-                upsellTitle: upsellEnabled ? String(upsell?.title || 'Prioridade de envio') : '',
-                upsellPrice: upsellEnabled ? Number(upsell?.price || 0) : 0,
-                previousTxid: upsellEnabled ? String(upsell?.previousTxid || '') : ''
-            },
-            pix: {
-                expiresInDays: 2
-            }
-        };
-
-        const requestPix = async (attempt) => {
-            const { response, data } = await fetchJson(`${BASE_URL}/v1/gateway/api/`, {
-                method: 'POST',
-                headers: authHeaders,
-                body: JSON.stringify(payload)
-            });
-            if (response.ok) return { response, data };
-
-            const retryableStatus = [408, 429, 500, 502, 503, 504];
-            if (attempt < 1 && retryableStatus.includes(response.status)) {
-                console.warn('[pix] retrying request', { status: response.status, attempt: attempt + 1 });
-                await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-                return requestPix(attempt + 1);
-            }
-
-            return { response, data };
-        };
-
         let response;
         let data;
-        try {
-            ({ response, data } = await requestPix(0));
-        } catch (error) {
-            console.error('[pix] request failed', { message: error.message || String(error) });
-            return res.status(504).json({ error: 'Falha ao gerar o PIX. Tente novamente.' });
+        let txid = '';
+        let paymentCode = '';
+        let paymentCodeBase64 = '';
+        let paymentQrUrl = '';
+        let statusRaw = '';
+
+        if (gateway === 'ghostspay') {
+            if (!hasGhostspayCredentials(gatewayConfig)) {
+                return res.status(500).json({ error: 'Credenciais GhostsPay nao configuradas.' });
+            }
+
+            const ghostItems = items.map((item) => ({
+                title: item.title,
+                quantity: Number(item.quantity || 1),
+                unitPrice: Math.max(1, Math.round(Number(item.unitPrice || 0) * 100))
+            }));
+            const ghostPayload = {
+                customer: {
+                    name,
+                    email,
+                    phone,
+                    document: {
+                        number: cpf,
+                        type: 'CPF'
+                    }
+                },
+                paymentMethod: 'PIX',
+                amount: Math.max(1, Math.round(totalAmount * 100)),
+                items: ghostItems,
+                pix: {
+                    expiresInDays: 2
+                },
+                postbackUrl: resolveGhostspayPostbackUrl(req, gatewayConfig),
+                ip: extractIp(req),
+                description: upsellEnabled ? 'Pedido iFood Bag - Upsell' : 'Pedido iFood Bag',
+                metadata: {
+                    gateway: 'ghostspay',
+                    orderId,
+                    shippingId: shipping?.id || '',
+                    shippingName: shipping?.name || '',
+                    cep: zipCode,
+                    reference: extra?.reference || '',
+                    bumpSelected: !!(bump && bump.price),
+                    bumpPrice: bump?.price || 0,
+                    upsellEnabled,
+                    upsellKind: upsellEnabled ? String(upsell?.kind || 'frete_1dia') : '',
+                    upsellTitle: upsellEnabled ? String(upsell?.title || 'Prioridade de envio') : '',
+                    upsellPrice: upsellEnabled ? Number(upsell?.price || 0) : 0,
+                    previousTxid: upsellEnabled ? String(upsell?.previousTxid || '') : '',
+                    utm_source: rawBody?.utm?.utm_source || '',
+                    utm_medium: rawBody?.utm?.utm_medium || '',
+                    utm_campaign: rawBody?.utm?.utm_campaign || '',
+                    utm_term: rawBody?.utm?.utm_term || '',
+                    utm_content: rawBody?.utm?.utm_content || '',
+                    src: rawBody?.utm?.src || '',
+                    sck: rawBody?.utm?.sck || ''
+                }
+            };
+
+            ({ response, data } = await requestGhostspayCreate(gatewayConfig, ghostPayload));
+            if (!response?.ok) {
+                return res.status(response?.status || 502).json({
+                    error: 'Falha ao gerar o PIX.',
+                    detail: data
+                });
+            }
+
+            const ghostData = resolveGhostspayResponse(data);
+            txid = ghostData.txid;
+            paymentCode = ghostData.paymentCode;
+            paymentCodeBase64 = ghostData.paymentCodeBase64;
+            paymentQrUrl = ghostData.paymentQrUrl;
+            statusRaw = ghostData.status;
+        } else {
+            if (!String(gatewayConfig.apiKeyBase64 || '').trim()) {
+                return res.status(500).json({ error: 'API Key da AtivusHUB nao configurada.' });
+            }
+
+            const sellerId = await getAtivushubSellerId(gatewayConfig);
+            const ativusPayload = {
+                amount: totalAmount,
+                id_seller: sellerId,
+                customer: {
+                    name,
+                    email,
+                    cpf,
+                    phone,
+                    externaRef: orderId,
+                    address: {
+                        street,
+                        streetNumber,
+                        complement,
+                        zipCode,
+                        neighborhood,
+                        city,
+                        state,
+                        country: 'br'
+                    }
+                },
+                checkout: {
+                    utm_source: rawBody?.utm?.utm_source || '',
+                    utm_medium: rawBody?.utm?.utm_medium || '',
+                    utm_campaign: rawBody?.utm?.utm_campaign || '',
+                    utm_term: rawBody?.utm?.utm_term || '',
+                    utm_content: rawBody?.utm?.utm_content || '',
+                    src: rawBody?.utm?.src || '',
+                    sck: rawBody?.utm?.sck || ''
+                },
+                items,
+                postbackUrl: resolveAtivushubPostbackUrl(req, gatewayConfig),
+                ip: extractIp(req),
+                metadata: {
+                    gateway: 'ativushub',
+                    orderId,
+                    shippingId: shipping?.id || '',
+                    shippingName: shipping?.name || '',
+                    cep: zipCode,
+                    reference: extra?.reference || '',
+                    bumpSelected: !!(bump && bump.price),
+                    bumpPrice: bump?.price || 0,
+                    upsellEnabled,
+                    upsellKind: upsellEnabled ? String(upsell?.kind || 'frete_1dia') : '',
+                    upsellTitle: upsellEnabled ? String(upsell?.title || 'Prioridade de envio') : '',
+                    upsellPrice: upsellEnabled ? Number(upsell?.price || 0) : 0,
+                    previousTxid: upsellEnabled ? String(upsell?.previousTxid || '') : ''
+                },
+                pix: {
+                    expiresInDays: 2
+                }
+            };
+
+            ({ response, data } = await requestAtivushubCreate(gatewayConfig, ativusPayload));
+            if (!response?.ok) {
+                return res.status(response?.status || 502).json({
+                    error: 'Falha ao gerar o PIX.',
+                    detail: data
+                });
+            }
+
+            txid = String(data?.idTransaction || data?.idtransaction || '').trim();
+            paymentCode = String(data?.paymentCode || data?.paymentcode || '').trim();
+            paymentCodeBase64 = String(data?.paymentCodeBase64 || data?.paymentcodebase64 || '').trim();
+            statusRaw = String(data?.status_transaction || data?.status || '').trim();
         }
 
-        if (!response.ok) {
-            console.error('[pix] request error', { status: response.status, detail: data?.message || '' });
-            return res.status(response.status).json({
-                error: 'Falha ao gerar o PIX.',
+        if (!txid) {
+            return res.status(502).json({
+                error: 'Gateway retornou PIX sem identificador de transacao.',
                 detail: data
             });
         }
 
         const pixCreatedAt = new Date().toISOString();
 
-        // Do not block checkout flow on database write.
         upsertLead({
             ...(rawBody || {}),
+            gateway,
+            pixGateway: gateway,
+            paymentGateway: gateway,
             event: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
             stage: upsellEnabled ? 'upsell' : 'pix',
-            pixTxid: data.idTransaction || data.idtransaction || '',
+            pixTxid: txid,
             pixAmount: totalAmount,
             pixCreatedAt,
             pixStatusChangedAt: pixCreatedAt,
+            pixStatus: statusRaw || 'waiting_payment',
             upsell: upsellEnabled ? {
                 enabled: true,
                 kind: String(upsell?.kind || 'frete_1dia'),
@@ -202,7 +333,6 @@ module.exports = async (req, res) => {
             } : null
         }, req).catch(() => null);
 
-        const txid = data.idTransaction || data.idtransaction || '';
         const utmOrderId = txid || orderId;
         const utmJob = {
             channel: 'utmfy',
@@ -217,6 +347,7 @@ module.exports = async (req, res) => {
                 bump,
                 utm: rawBody.utm || {},
                 txid,
+                gateway,
                 createdAt: pixCreatedAt,
                 status: 'waiting_payment',
                 upsell: upsellEnabled ? {
@@ -228,7 +359,6 @@ module.exports = async (req, res) => {
             }
         };
 
-        // Try immediate send first (server-side), then fallback to queue retry.
         const utmImmediate = await sendUtmfy(utmJob.eventName, utmJob.payload).catch((error) => ({
             ok: false,
             reason: error?.message || 'utmfy_immediate_error'
@@ -246,6 +376,7 @@ module.exports = async (req, res) => {
             customerEmail: email,
             shippingName: shipping?.name || '',
             cep: zipCode,
+            gateway,
             isUpsell: upsellEnabled
         };
         const pushKind = upsellEnabled ? 'upsell_pix_created' : 'pix_created';
@@ -268,6 +399,7 @@ module.exports = async (req, res) => {
                 amount: totalAmount,
                 orderId: utmOrderId,
                 shippingName: shipping?.name || '',
+                gateway,
                 isUpsell: upsellEnabled,
                 client_email: email,
                 client_document: cpf,
@@ -281,10 +413,12 @@ module.exports = async (req, res) => {
 
         return res.status(200).json({
             idTransaction: txid,
-            paymentCode: data.paymentCode || data.paymentcode,
-            paymentCodeBase64: data.paymentCodeBase64 || data.paymentcodebase64,
-            status: data.status_transaction || data.status || '',
-            amount: totalAmount
+            paymentCode,
+            paymentCodeBase64,
+            paymentQrUrl,
+            status: statusRaw || '',
+            amount: totalAmount,
+            gateway
         });
     } catch (error) {
         console.error('[pix] unexpected error', { message: error.message || String(error) });

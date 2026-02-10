@@ -82,6 +82,8 @@
               <p>Compare o funil por etapa, ajuste pixels e otimize a conversao sem sair do painel.</p>
               <div class="admin-hero-tags">
                 <span class="admin-tag">Ultima atividade: <strong id="metric-updated">-</strong></span>
+                <span class="admin-tag">Gateway ativo: <strong id="metric-active-gateway">-</strong></span>
+                <span class="admin-tag">Melhor conversao: <strong id="metric-best-gateway">-</strong></span>
                 <span class="admin-tag">Fonte: Supabase</span>
               </div>
             </div>
@@ -146,6 +148,26 @@
 
         <section class="admin-section admin-section--card">
           <div class="admin-section-header">
+            <h2>Conversao por gateway</h2>
+            <span class="admin-chip">PIX</span>
+          </div>
+          <p class="admin-hint">Compare em tempo real qual integracao converte mais pagamentos.</p>
+          <div class="admin-kpi-grid">
+            <div class="admin-kpi">
+              <span>AtivusHUB</span>
+              <strong id="metric-gateway-ativushub-conv">0%</strong>
+              <em id="metric-gateway-ativushub-detail">0 pagos / 0 PIX</em>
+            </div>
+            <div class="admin-kpi">
+              <span>GhostsPay</span>
+              <strong id="metric-gateway-ghostspay-conv">0%</strong>
+              <em id="metric-gateway-ghostspay-detail">0 pagos / 0 PIX</em>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-section admin-section--card">
+          <div class="admin-section-header">
             <h2>Controle do funil</h2>
             <span class="admin-chip">Ativacoes</span>
           </div>
@@ -157,13 +179,72 @@
             </label>
           </div>
         </section>
+
+        <section class="admin-section admin-section--card">
+          <div class="admin-section-header">
+            <h2>Gateways PIX</h2>
+            <span class="admin-chip">Pagamentos</span>
+          </div>
+          <p class="admin-hint">Defina o gateway ativo e configure credenciais dos provedores sem deploy.</p>
+          <div class="admin-grid">
+            <div class="input-group">
+              <select id="payments-active-gateway" class="floating-input">
+                <option value="ativushub">AtivusHUB</option>
+                <option value="ghostspay">GhostsPay</option>
+              </select>
+              <label for="payments-active-gateway" class="floating-label">Gateway ativo</label>
+            </div>
+
+            <label class="admin-switch">
+              <input type="checkbox" id="gateway-ativushub-enabled" />
+              <span>AtivusHUB ativo</span>
+            </label>
+            <div class="input-group">
+              <input type="text" id="gateway-ativushub-base-url" class="floating-input" placeholder=" " />
+              <label for="gateway-ativushub-base-url" class="floating-label">AtivusHUB Base URL</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-ativushub-api-key" class="floating-input" placeholder=" " />
+              <label for="gateway-ativushub-api-key" class="floating-label">AtivusHUB API Key (base64 ou raw)</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="gateway-ativushub-seller-id" class="floating-input" placeholder=" " />
+              <label for="gateway-ativushub-seller-id" class="floating-label">AtivusHUB Seller ID (opcional)</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-ativushub-webhook-token" class="floating-input" placeholder=" " />
+              <label for="gateway-ativushub-webhook-token" class="floating-label">AtivusHUB Webhook Token</label>
+            </div>
+
+            <label class="admin-switch">
+              <input type="checkbox" id="gateway-ghostspay-enabled" />
+              <span>GhostsPay ativo</span>
+            </label>
+            <div class="input-group">
+              <input type="text" id="gateway-ghostspay-base-url" class="floating-input" placeholder=" " />
+              <label for="gateway-ghostspay-base-url" class="floating-label">GhostsPay Base URL</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-ghostspay-secret-key" class="floating-input" placeholder=" " />
+              <label for="gateway-ghostspay-secret-key" class="floating-label">GhostsPay Secret Key</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="gateway-ghostspay-company-id" class="floating-input" placeholder=" " />
+              <label for="gateway-ghostspay-company-id" class="floating-label">GhostsPay Company ID</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-ghostspay-webhook-token" class="floating-input" placeholder=" " />
+              <label for="gateway-ghostspay-webhook-token" class="floating-label">GhostsPay Webhook Token</label>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/script.js?v=5.9" defer></script>
+  <script src="/script.js?v=6.0" defer></script>
 </body>
 </html>
 

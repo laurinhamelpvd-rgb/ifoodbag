@@ -8,6 +8,10 @@ const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin }
 const { sendUtmfy } = require('./lib/utmfy');
 const { upsertPageview } = require('./lib/pageviews-store');
 const { sendPixelServerEvent } = require('./lib/pixel-capi');
+const pixCreateHandler = require('./api/pix/create');
+const pixStatusHandler = require('./api/pix/status');
+const pixWebhookHandler = require('./api/pix/webhook');
+const adminApiHandler = require('./api/admin/[...path].js');
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -38,6 +42,12 @@ let cachedSellerId = null;
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
+
+// Keep local Express behavior aligned with the serverless API handlers.
+app.post('/api/pix/create', (req, res) => pixCreateHandler(req, res));
+app.post('/api/pix/status', (req, res) => pixStatusHandler(req, res));
+app.post('/api/pix/webhook', (req, res) => pixWebhookHandler(req, res));
+app.all('/api/admin/*', (req, res) => adminApiHandler(req, res));
 
 app.get('/', (_req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));

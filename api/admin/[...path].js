@@ -1,10 +1,16 @@
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin } = require('../../lib/admin-auth');
 const { getSettings, saveSettings, defaultSettings } = require('../../lib/settings-store');
+const {
+    buildPaymentsConfig,
+    mergePaymentSettings,
+    resolveGatewayFromPayload
+} = require('../../lib/payment-gateway-config');
 const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadBySessionId } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
-const { getTransactionStatusByIdTransaction } = require('../../lib/ativus');
+const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
+const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
 const {
     getAtivusStatus,
     isAtivusPaidStatus,
@@ -13,6 +19,17 @@ const {
     isAtivusRefusedStatus,
     mapAtivusStatusToUtmify
 } = require('../../lib/ativus-status');
+const {
+    getGhostspayStatus,
+    getGhostspayUpdatedAt,
+    getGhostspayAmount,
+    isGhostspayPaidStatus,
+    isGhostspayPendingStatus,
+    isGhostspayRefundedStatus,
+    isGhostspayRefusedStatus,
+    isGhostspayChargebackStatus,
+    mapGhostspayStatusToUtmify
+} = require('../../lib/ghostspay-status');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 const fetchFn = global.fetch
@@ -91,6 +108,15 @@ function isPaidFromStatus(status) {
     );
 }
 
+function normalizeAmountPossiblyCents(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) return 0;
+    if (Number.isInteger(amount) && Math.abs(amount) >= 1000) {
+        return Number((amount / 100).toFixed(2));
+    }
+    return Number(amount.toFixed(2));
+}
+
 function isLeadPaid(row, payload) {
     if (String(row?.last_event || '').toLowerCase().trim() === 'pix_confirmed') return true;
     if (toIsoDate(payload?.pixPaidAt)) return true;
@@ -158,8 +184,21 @@ function resolveEventTime(row, payload) {
     );
 }
 
+function resolveLeadGateway(row, payload) {
+    return resolveGatewayFromPayload({
+        ...asObject(payload),
+        gateway: row?.gateway,
+        provider: row?.provider
+    }, 'ativushub');
+}
+
+function gatewayLabel(gateway) {
+    return gateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+}
+
 function mapLeadReadable(row) {
     const payload = asObject(row?.payload);
+    const gateway = resolveLeadGateway(row, payload);
     const isPaid = isLeadPaid(row, payload);
     const isUpsell = Boolean(
         payload?.upsell?.enabled === true ||
@@ -202,6 +241,8 @@ function mapLeadReadable(row) {
         pix_txid: row?.pix_txid || '-',
         valor_total: row?.pix_amount ?? null,
         is_upsell: isUpsell,
+        gateway,
+        gateway_label: gatewayLabel(gateway),
         utm_source: row?.utm_source || '-',
         utm_campaign: row?.utm_campaign || '-',
         fbclid: row?.fbclid || '-',
@@ -215,14 +256,15 @@ function mapLeadReadable(row) {
 }
 
 async function listLeadTxidsForReconcile({ maxTx = 50000, pageSize = 500, includeConfirmed = true } = {}) {
-    const txids = [];
+    const entries = [];
+    const seen = new Set();
     let offset = 0;
     let scannedRows = 0;
 
-    while (txids.length < maxTx) {
+    while (entries.length < maxTx) {
         const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
-        const limit = Math.min(pageSize, maxTx - txids.length);
-        url.searchParams.set('select', 'pix_txid,payload,last_event,updated_at');
+        const limit = Math.min(pageSize, maxTx - entries.length);
+        url.searchParams.set('select', 'session_id,pix_txid,payload,last_event,updated_at');
         if (!includeConfirmed) {
             url.searchParams.set('or', '(last_event.is.null,last_event.neq.pix_confirmed)');
         }
@@ -256,10 +298,22 @@ async function listLeadTxidsForReconcile({ maxTx = 50000, pageSize = 500, includ
                 row?.payload?.pix?.idtransaction ||
                 row?.payload?.idTransaction ||
                 row?.payload?.idtransaction ||
+                row?.payload?.id ||
                 ''
             ).trim();
             const txid = String(row?.pix_txid || fallbackTxid || '').trim();
-            if (txid && txid !== '-') txids.push(txid);
+            if (!txid || txid === '-') return;
+
+            const payload = asObject(row?.payload);
+            const gateway = resolveLeadGateway(row, payload);
+            const key = `${gateway}:${txid}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            entries.push({
+                txid,
+                gateway,
+                sessionId: String(row?.session_id || payload?.sessionId || payload?.orderId || '').trim()
+            });
         });
 
         if (rows.length < limit) {
@@ -270,7 +324,7 @@ async function listLeadTxidsForReconcile({ maxTx = 50000, pageSize = 500, includ
 
     return {
         ok: true,
-        txids: Array.from(new Set(txids)),
+        entries,
         scannedRows
     };
 }
@@ -334,7 +388,29 @@ async function getLeads(req, res) {
         refunded: 0,
         refused: 0,
         pending: 0,
-        lastUpdated: null
+        lastUpdated: null,
+        gatewayStats: {
+            ativushub: {
+                gateway: 'ativushub',
+                label: gatewayLabel('ativushub'),
+                leads: 0,
+                pix: 0,
+                paid: 0,
+                refunded: 0,
+                refused: 0,
+                pending: 0
+            },
+            ghostspay: {
+                gateway: 'ghostspay',
+                label: gatewayLabel('ghostspay'),
+                leads: 0,
+                pix: 0,
+                paid: 0,
+                refunded: 0,
+                refused: 0,
+                pending: 0
+            }
+        }
     };
 
     const maxSummaryRows = clamp(req.query.summaryMax || 20000, 1, 50000);
@@ -367,16 +443,31 @@ async function getLeads(req, res) {
 
         rows.forEach((row) => {
             const mapped = mapLeadReadable(row);
+            const gateway = mapped.gateway === 'ghostspay' ? 'ghostspay' : 'ativushub';
+            const gatewaySummary = summary.gatewayStats[gateway];
             summary.total += 1;
+            gatewaySummary.leads += 1;
             if (String(row?.cep || '').trim() && String(row?.cep || '').trim() !== '-') summary.cep += 1;
             if (String(row?.shipping_name || '').trim() && String(row?.shipping_name || '').trim() !== '-') summary.frete += 1;
-            if (String(row?.pix_txid || '').trim() && String(row?.pix_txid || '').trim() !== '-') summary.pix += 1;
+            if (String(row?.pix_txid || '').trim() && String(row?.pix_txid || '').trim() !== '-') {
+                summary.pix += 1;
+                gatewaySummary.pix += 1;
+            }
 
             const ev = String(mapped?.evento || '').toLowerCase().trim();
-            if (mapped?.is_paid || ev === 'pix_confirmed') summary.paid += 1;
-            else if (ev === 'pix_refunded') summary.refunded += 1;
-            else if (ev === 'pix_refused') summary.refused += 1;
-            else if (ev === 'pix_pending' || ev === 'pix_created') summary.pending += 1;
+            if (mapped?.is_paid || ev === 'pix_confirmed') {
+                summary.paid += 1;
+                gatewaySummary.paid += 1;
+            } else if (ev === 'pix_refunded') {
+                summary.refunded += 1;
+                gatewaySummary.refunded += 1;
+            } else if (ev === 'pix_refused') {
+                summary.refused += 1;
+                gatewaySummary.refused += 1;
+            } else if (ev === 'pix_pending' || ev === 'pix_created') {
+                summary.pending += 1;
+                gatewaySummary.pending += 1;
+            }
 
             const eventTime = mapped?.event_time || row?.updated_at || null;
             const currentTs = summary.lastUpdated ? Date.parse(summary.lastUpdated) : 0;
@@ -609,6 +700,7 @@ async function settings(req, res) {
                 ...(body.utmfy || {})
             },
             pushcut: buildPushcutConfig(body.pushcut || {}),
+            payments: mergePaymentSettings(defaultSettings.payments || {}, body.payments || {}),
             features: {
                 ...defaultSettings.features,
                 ...(body.features || {})
@@ -783,6 +875,8 @@ async function pixReconcile(req, res) {
         return;
     }
 
+    const settingsData = await getSettings().catch(() => ({}));
+    const payments = buildPaymentsConfig(settingsData?.payments || {});
     const maxTx = clamp(req.query?.maxTx || 50000, 1, 200000);
     const concurrency = clamp(req.query?.concurrency || 6, 1, 12);
     const pageSize = clamp(req.query?.pageSize || 500, 50, 1000);
@@ -795,282 +889,346 @@ async function pixReconcile(req, res) {
         });
         return;
     }
-    const uniqueTxids = txidList.txids;
+    const candidates = txidList.entries || [];
 
     let checked = 0;
     let confirmed = 0;
     let pending = 0;
     let failed = 0;
     let updated = 0;
-    let failedDetails = [];
+    const failedDetails = [];
     let blockedByAtivus = 0;
+    const gatewaySummary = {
+        ativushub: { checked: 0, confirmed: 0, pending: 0, failed: 0 },
+        ghostspay: { checked: 0, confirmed: 0, pending: 0, failed: 0 }
+    };
 
-    const runOne = async (txid) => {
+    const runOne = async ({ txid, gateway: rowGateway, sessionId: sessionHint }) => {
+        const gateway = rowGateway === 'ghostspay' ? 'ghostspay' : 'ativushub';
         checked += 1;
+        gatewaySummary[gateway].checked += 1;
         try {
-            const { response, data } = await getTransactionStatusByIdTransaction(txid);
-            if (!response.ok) {
-                failed += 1;
-                if (response.status === 403) blockedByAtivus += 1;
-                if (failedDetails.length < 8) {
-                    failedDetails.push({
-                        txid,
-                        status: response.status,
-                        detail: data?.error || data?.message || ''
-                    });
-                }
-                return;
-            }
-            const status = getAtivusStatus(data);
-            const utmifyStatus = mapAtivusStatusToUtmify(status);
-            const isPaid = isAtivusPaidStatus(status);
-            const isRefunded = isAtivusRefundedStatus(status);
-            const isRefused = isAtivusRefusedStatus(status);
+            let response;
+            let data;
+            let status = '';
+            let utmifyStatus = 'waiting_payment';
+            let isPaid = false;
+            let isRefunded = false;
+            let isRefused = false;
+            let isPending = false;
+            let changedAt = new Date().toISOString();
+            let sessionIdFallback = sessionHint || '';
+            let amount = 0;
+            let fee = 0;
+            let commission = 0;
 
-            if (isPaid || isRefunded || isRefused || isAtivusPendingStatus(status)) {
-                if (utmifyStatus === 'paid') confirmed += 1;
-                else if (utmifyStatus === 'waiting_payment') pending += 1;
-                else failed += 1;
-                const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-                const sessionIdFallback = String(
+            if (gateway === 'ghostspay') {
+                ({ response, data } = await requestGhostspayStatus(payments?.gateways?.ghostspay || {}, txid));
+                if (!response?.ok) {
+                    failed += 1;
+                    gatewaySummary[gateway].failed += 1;
+                    if (failedDetails.length < 8) {
+                        failedDetails.push({
+                            txid,
+                            gateway,
+                            status: response?.status || 0,
+                            detail: data?.error || data?.message || ''
+                        });
+                    }
+                    return;
+                }
+
+                status = getGhostspayStatus(data);
+                utmifyStatus = mapGhostspayStatusToUtmify(status);
+                isPaid = isGhostspayPaidStatus(status);
+                isRefunded = isGhostspayRefundedStatus(status);
+                isRefused = isGhostspayRefusedStatus(status) || isGhostspayChargebackStatus(status);
+                isPending = isGhostspayPendingStatus(status);
+                changedAt =
+                    toIsoDate(getGhostspayUpdatedAt(data)) ||
+                    toIsoDate(data?.paidAt) ||
+                    toIsoDate(data?.data?.paidAt) ||
+                    new Date().toISOString();
+                sessionIdFallback = String(
+                    data?.metadata?.orderId ||
+                    data?.data?.metadata?.orderId ||
+                    data?.externalreference ||
+                    data?.external_reference ||
+                    sessionIdFallback ||
+                    ''
+                ).trim();
+                amount = getGhostspayAmount(data);
+                fee = normalizeAmountPossiblyCents(
+                    data?.gatewayFee ||
+                    data?.fee ||
+                    data?.data?.gatewayFee ||
+                    data?.data?.fee ||
+                    0
+                );
+                commission = Math.max(0, Number((amount - fee).toFixed(2)));
+            } else {
+                ({ response, data } = await requestAtivushubStatus(payments?.gateways?.ativushub || {}, txid));
+                if (!response?.ok) {
+                    failed += 1;
+                    gatewaySummary[gateway].failed += 1;
+                    if (response?.status === 403) blockedByAtivus += 1;
+                    if (failedDetails.length < 8) {
+                        failedDetails.push({
+                            txid,
+                            gateway,
+                            status: response?.status || 0,
+                            detail: data?.error || data?.message || ''
+                        });
+                    }
+                    return;
+                }
+
+                status = getAtivusStatus(data);
+                utmifyStatus = mapAtivusStatusToUtmify(status);
+                isPaid = isAtivusPaidStatus(status);
+                isRefunded = isAtivusRefundedStatus(status);
+                isRefused = isAtivusRefusedStatus(status);
+                isPending = isAtivusPendingStatus(status);
+                changedAt =
+                    toIsoDate(data?.data_transacao) ||
+                    toIsoDate(data?.data_registro) ||
+                    new Date().toISOString();
+                sessionIdFallback = String(
                     data?.externalreference ||
                     data?.external_reference ||
                     data?.metadata?.orderId ||
                     data?.orderId ||
+                    sessionIdFallback ||
                     ''
                 ).trim();
-                let lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
-                let leadData = lead?.ok ? lead.data : null;
-                if (!leadData && sessionIdFallback) {
-                    lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
-                    leadData = lead?.ok ? lead.data : null;
-                }
-                const payloadPatch = mergeLeadPayload(leadData?.payload, {
-                    pixTxid: txid,
-                    pixStatus: status || null,
-                    pixStatusChangedAt:
-                        toIsoDate(data?.data_transacao) ||
-                        toIsoDate(data?.data_registro) ||
-                        new Date().toISOString(),
-                    pixCreatedAt:
-                        asObject(leadData?.payload).pixCreatedAt ||
-                        toIsoDate(data?.data_registro) ||
-                        leadData?.created_at ||
-                        undefined,
-                    pixPaidAt: isPaid
-                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                        : undefined,
-                    pixRefundedAt: isRefunded
-                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                        : undefined,
-                    pixRefusedAt: isRefused
-                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                        : undefined
-                });
-                let up = await updateLeadByPixTxid(txid, {
-                    last_event: lastEvent,
-                    stage: 'pix',
-                    payload: payloadPatch
-                }).catch(() => ({ ok: false, count: 0 }));
-                if ((!up?.ok || Number(up?.count || 0) === 0) && sessionIdFallback) {
-                    const bySessionLead = leadData || (await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null })))?.data;
-                    const bySessionPayload = mergeLeadPayload(bySessionLead?.payload, {
-                        pixTxid: txid,
-                        pixStatus: status || null,
-                        pixStatusChangedAt:
-                            toIsoDate(data?.data_transacao) ||
-                            toIsoDate(data?.data_registro) ||
-                            new Date().toISOString(),
-                        pixCreatedAt:
-                            asObject(bySessionLead?.payload).pixCreatedAt ||
-                            toIsoDate(data?.data_registro) ||
-                            bySessionLead?.created_at ||
-                            undefined,
-                        pixPaidAt: isPaid
-                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                            : undefined,
-                        pixRefundedAt: isRefunded
-                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                            : undefined,
-                        pixRefusedAt: isRefused
-                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
-                            : undefined
-                    });
-                    const bySession = await updateLeadBySessionId(sessionIdFallback, {
-                        last_event: lastEvent,
-                        stage: 'pix',
-                        payload: bySessionPayload
-                    }).catch(() => ({ ok: false, count: 0 }));
-                    if (bySession?.ok) up = bySession;
-                }
-
-                lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
-                leadData = lead?.ok ? lead.data : null;
-                if (!leadData && sessionIdFallback) {
-                    lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
-                    leadData = lead?.ok ? lead.data : null;
-                }
-                const leadUtm = leadData?.payload?.utm || {};
-                const isUpsell = Boolean(
-                    leadData?.payload?.upsell?.enabled === true ||
-                    String(leadData?.shipping_id || '').trim().toLowerCase() === 'expresso_1dia' ||
-                    /adiantamento|prioridade|expresso/i.test(String(leadData?.shipping_name || ''))
+                amount = Number(
+                    data?.amount ||
+                    data?.valor_bruto ||
+                    data?.valor_liquido ||
+                    data?.data?.amount ||
+                    0
                 );
-                const changedRows = up?.ok ? Number(up?.count || 0) : 0;
-                if (changedRows > 0) {
-                    updated += changedRows;
-                    const amount = Number(
-                        data?.amount ||
-                        data?.valor_bruto ||
-                        data?.valor_liquido ||
-                        data?.data?.amount ||
-                        0
-                    );
-                    const gatewayFee = Number(data?.taxa_deposito || 0) + Number(data?.taxa_adquirente || 0);
-                    const userCommission = Number(data?.deposito_liquido || data?.valor_liquido || 0);
-                    const utmPayload = {
-                        event: 'pix_status',
-                        orderId: txid || leadData?.session_id || sessionIdFallback || '',
-                        txid,
-                        status: utmifyStatus,
-                        amount,
-                        personal: leadData ? {
-                            name: leadData.name,
-                            email: leadData.email,
-                            cpf: leadData.cpf,
-                            phoneDigits: leadData.phone
-                        } : null,
-                        address: leadData ? {
-                            street: leadData.address_line,
-                            neighborhood: leadData.neighborhood,
-                            city: leadData.city,
-                            state: leadData.state,
-                            cep: leadData.cep
-                        } : null,
-                        shipping: leadData ? {
-                            id: leadData.shipping_id,
-                            name: leadData.shipping_name,
-                            price: leadData.shipping_price
-                        } : null,
-                        bump: leadData && leadData.bump_selected ? {
-                            title: 'Seguro Bag',
-                            price: leadData.bump_price
-                        } : null,
-                        upsell: isUpsell ? {
-                            enabled: true,
-                            kind: leadData?.payload?.upsell?.kind || 'frete_1dia',
-                            title: leadData?.payload?.upsell?.title || leadData?.shipping_name || 'Prioridade de envio',
-                            price: Number(leadData?.payload?.upsell?.price || leadData?.shipping_price || amount || 0)
-                        } : null,
-                        utm: leadData ? {
-                            utm_source: leadData.utm_source,
-                            utm_medium: leadData.utm_medium,
-                            utm_campaign: leadData.utm_campaign,
-                            utm_term: leadData.utm_term,
-                            utm_content: leadData.utm_content,
-                            gclid: leadData.gclid,
-                            fbclid: leadData.fbclid,
-                            ttclid: leadData.ttclid,
-                            src: leadUtm.src,
-                            sck: leadUtm.sck
-                        } : leadUtm,
-                        payload: data,
-                        createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at,
-                        approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || data?.data_transacao || data?.data_registro || null) : null,
-                        refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || data?.data_transacao || data?.data_registro || null) : null,
-                        gatewayFeeInCents: Math.round(gatewayFee * 100),
-                        userCommissionInCents: Math.round(userCommission * 100),
-                        totalPriceInCents: Math.round(amount * 100)
-                    };
+                fee = Number(data?.taxa_deposito || 0) + Number(data?.taxa_adquirente || 0);
+                commission = Number(data?.deposito_liquido || data?.valor_liquido || 0);
+            }
 
-                    const utmEventName = isUpsell && isPaid ? 'upsell_pix_confirmed' : 'pix_status';
-                    const utmImmediate = await sendUtmfy(utmEventName, utmPayload).catch(() => ({ ok: false }));
-                    if (!utmImmediate?.ok) {
-                        await enqueueDispatch({
-                        channel: 'utmfy',
-                        eventName: utmEventName,
-                        dedupeKey: `utmfy:status:${txid}:${isUpsell ? 'upsell' : 'base'}:${utmifyStatus}`,
-                        payload: utmPayload
-                    }).catch(() => null);
-                        await processDispatchQueue(8).catch(() => null);
-                    }
-
-                    if (isPaid) {
-                        const pushKind = isUpsell ? 'upsell_pix_confirmed' : 'pix_confirmed';
-                        await enqueueDispatch({
-                            channel: 'pushcut',
-                            kind: pushKind,
-                            dedupeKey: `pushcut:pix_confirmed:${txid}`,
-                            payload: {
-                                txid,
-                                orderId: txid || leadData?.session_id || sessionIdFallback || '',
-                                status,
-                                amount,
-                                customerName: leadData?.name || data?.nome || '',
-                                customerEmail: leadData?.email || data?.email || '',
-                                cep: leadData?.cep || '',
-                                shippingName: leadData?.shipping_name || '',
-                                isUpsell
-                            }
-                        }).catch(() => null);
-                        await processDispatchQueue(8).catch(() => null);
-
-                        const forwarded = req?.headers?.['x-forwarded-for'];
-                        const clientIp = typeof forwarded === 'string' && forwarded
-                            ? forwarded.split(',')[0].trim()
-                            : req?.socket?.remoteAddress || '';
-                        const userAgent = req?.headers?.['user-agent'] || '';
-                        const leadPayload = asObject(leadData?.payload);
-                        const fbclid = String(leadData?.fbclid || leadPayload?.fbclid || leadUtm?.fbclid || '').trim();
-                        const fbp = String(leadPayload?.fbp || '').trim();
-                        const fbc = String(leadPayload?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
-                        await enqueueDispatch({
-                            channel: 'pixel',
-                            eventName: 'Purchase',
-                            dedupeKey: `pixel:purchase:${txid}`,
-                            payload: {
-                                amount,
-                                orderId: txid || leadData?.session_id || sessionIdFallback || '',
-                                shippingName: leadData?.shipping_name || '',
-                                isUpsell,
-                                client_email: leadData?.email || data?.email || '',
-                                client_document: leadData?.cpf || data?.documento || '',
-                                client_ip: clientIp,
-                                user_agent: userAgent,
-                                source_url: leadData?.source_url || leadPayload?.sourceUrl || '',
-                                fbclid,
-                                fbp,
-                                fbc
-                            }
-                        }).catch(() => null);
-                        await processDispatchQueue(8).catch(() => null);
-                    }
+            if (!(isPaid || isRefunded || isRefused || isPending)) {
+                failed += 1;
+                gatewaySummary[gateway].failed += 1;
+                if (failedDetails.length < 8) {
+                    failedDetails.push({ txid, gateway, status: 200, detail: `status:${status || 'unknown'}` });
                 }
+                return;
+            }
+
+            if (utmifyStatus === 'paid') {
+                confirmed += 1;
+                gatewaySummary[gateway].confirmed += 1;
+            } else if (utmifyStatus === 'waiting_payment') {
+                pending += 1;
+                gatewaySummary[gateway].pending += 1;
             } else {
                 failed += 1;
-                if (failedDetails.length < 8) {
-                    failedDetails.push({ txid, status: 200, detail: `status:${status || 'unknown'}` });
-                }
+                gatewaySummary[gateway].failed += 1;
             }
+
+            const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
+            let lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+            let leadData = lead?.ok ? lead.data : null;
+            if (!leadData && sessionIdFallback) {
+                lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
+                leadData = lead?.ok ? lead.data : null;
+            }
+            const payloadPatch = mergeLeadPayload(leadData?.payload, {
+                gateway,
+                pixGateway: gateway,
+                paymentGateway: gateway,
+                pixTxid: txid,
+                pixStatus: status || null,
+                pixStatusChangedAt: changedAt,
+                pixCreatedAt:
+                    asObject(leadData?.payload).pixCreatedAt ||
+                    toIsoDate(data?.data_registro) ||
+                    toIsoDate(data?.createdAt) ||
+                    toIsoDate(data?.data?.createdAt) ||
+                    leadData?.created_at ||
+                    undefined,
+                pixPaidAt: isPaid ? changedAt : undefined,
+                pixRefundedAt: isRefunded ? changedAt : undefined,
+                pixRefusedAt: isRefused ? changedAt : undefined
+            });
+            let up = await updateLeadByPixTxid(txid, {
+                last_event: lastEvent,
+                stage: 'pix',
+                payload: payloadPatch
+            }).catch(() => ({ ok: false, count: 0 }));
+            if ((!up?.ok || Number(up?.count || 0) === 0) && sessionIdFallback) {
+                const bySessionLead = leadData || (await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null })))?.data;
+                const bySessionPayload = mergeLeadPayload(bySessionLead?.payload, payloadPatch);
+                const bySession = await updateLeadBySessionId(sessionIdFallback, {
+                    last_event: lastEvent,
+                    stage: 'pix',
+                    payload: bySessionPayload
+                }).catch(() => ({ ok: false, count: 0 }));
+                if (bySession?.ok) up = bySession;
+            }
+
+            lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+            leadData = lead?.ok ? lead.data : null;
+            if (!leadData && sessionIdFallback) {
+                lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
+                leadData = lead?.ok ? lead.data : null;
+            }
+            const leadUtm = leadData?.payload?.utm || {};
+            const isUpsell = Boolean(
+                leadData?.payload?.upsell?.enabled === true ||
+                String(leadData?.shipping_id || '').trim().toLowerCase() === 'expresso_1dia' ||
+                /adiantamento|prioridade|expresso/i.test(String(leadData?.shipping_name || ''))
+            );
+            const changedRows = up?.ok ? Number(up?.count || 0) : 0;
+            if (changedRows <= 0) return;
+
+            updated += changedRows;
+
+            const utmPayload = {
+                event: 'pix_status',
+                orderId: txid || leadData?.session_id || sessionIdFallback || '',
+                txid,
+                gateway,
+                status: utmifyStatus,
+                amount,
+                personal: leadData ? {
+                    name: leadData.name,
+                    email: leadData.email,
+                    cpf: leadData.cpf,
+                    phoneDigits: leadData.phone
+                } : null,
+                address: leadData ? {
+                    street: leadData.address_line,
+                    neighborhood: leadData.neighborhood,
+                    city: leadData.city,
+                    state: leadData.state,
+                    cep: leadData.cep
+                } : null,
+                shipping: leadData ? {
+                    id: leadData.shipping_id,
+                    name: leadData.shipping_name,
+                    price: leadData.shipping_price
+                } : null,
+                bump: leadData && leadData.bump_selected ? {
+                    title: 'Seguro Bag',
+                    price: leadData.bump_price
+                } : null,
+                upsell: isUpsell ? {
+                    enabled: true,
+                    kind: leadData?.payload?.upsell?.kind || 'frete_1dia',
+                    title: leadData?.payload?.upsell?.title || leadData?.shipping_name || 'Prioridade de envio',
+                    price: Number(leadData?.payload?.upsell?.price || leadData?.shipping_price || amount || 0)
+                } : null,
+                utm: leadData ? {
+                    utm_source: leadData.utm_source,
+                    utm_medium: leadData.utm_medium,
+                    utm_campaign: leadData.utm_campaign,
+                    utm_term: leadData.utm_term,
+                    utm_content: leadData.utm_content,
+                    gclid: leadData.gclid,
+                    fbclid: leadData.fbclid,
+                    ttclid: leadData.ttclid,
+                    src: leadUtm.src,
+                    sck: leadUtm.sck
+                } : leadUtm,
+                payload: data,
+                createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at,
+                approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || changedAt || null) : null,
+                refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || changedAt || null) : null,
+                gatewayFeeInCents: Math.round(Number(fee || 0) * 100),
+                userCommissionInCents: Math.round(Number(commission || 0) * 100),
+                totalPriceInCents: Math.round(Number(amount || 0) * 100)
+            };
+
+            const utmEventName = isUpsell && isPaid ? 'upsell_pix_confirmed' : 'pix_status';
+            const utmImmediate = await sendUtmfy(utmEventName, utmPayload).catch(() => ({ ok: false }));
+            if (!utmImmediate?.ok) {
+                await enqueueDispatch({
+                    channel: 'utmfy',
+                    eventName: utmEventName,
+                    dedupeKey: `utmfy:status:${gateway}:${txid}:${isUpsell ? 'upsell' : 'base'}:${utmifyStatus}`,
+                    payload: utmPayload
+                }).catch(() => null);
+                await processDispatchQueue(8).catch(() => null);
+            }
+
+            if (!isPaid) return;
+
+            const pushKind = isUpsell ? 'upsell_pix_confirmed' : 'pix_confirmed';
+            await enqueueDispatch({
+                channel: 'pushcut',
+                kind: pushKind,
+                dedupeKey: `pushcut:pix_confirmed:${gateway}:${txid}`,
+                payload: {
+                    txid,
+                    orderId: txid || leadData?.session_id || sessionIdFallback || '',
+                    gateway,
+                    status,
+                    amount,
+                    customerName: leadData?.name || '',
+                    customerEmail: leadData?.email || '',
+                    cep: leadData?.cep || '',
+                    shippingName: leadData?.shipping_name || '',
+                    isUpsell
+                }
+            }).catch(() => null);
+            await processDispatchQueue(8).catch(() => null);
+
+            const forwarded = req?.headers?.['x-forwarded-for'];
+            const clientIp = typeof forwarded === 'string' && forwarded
+                ? forwarded.split(',')[0].trim()
+                : req?.socket?.remoteAddress || '';
+            const userAgent = req?.headers?.['user-agent'] || '';
+            const leadPayload = asObject(leadData?.payload);
+            const fbclid = String(leadData?.fbclid || leadPayload?.fbclid || leadUtm?.fbclid || '').trim();
+            const fbp = String(leadPayload?.fbp || '').trim();
+            const fbc = String(leadPayload?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
+            await enqueueDispatch({
+                channel: 'pixel',
+                eventName: 'Purchase',
+                dedupeKey: `pixel:purchase:${gateway}:${txid}`,
+                payload: {
+                    amount,
+                    orderId: txid || leadData?.session_id || sessionIdFallback || '',
+                    gateway,
+                    shippingName: leadData?.shipping_name || '',
+                    isUpsell,
+                    client_email: leadData?.email || '',
+                    client_document: leadData?.cpf || '',
+                    client_ip: clientIp,
+                    user_agent: userAgent,
+                    source_url: leadData?.source_url || leadPayload?.sourceUrl || '',
+                    fbclid,
+                    fbp,
+                    fbc
+                }
+            }).catch(() => null);
+            await processDispatchQueue(8).catch(() => null);
         } catch (_error) {
             failed += 1;
+            gatewaySummary[gateway].failed += 1;
             if (failedDetails.length < 8) {
-                failedDetails.push({ txid, status: 0, detail: 'request_error' });
+                failedDetails.push({ txid, gateway, status: 0, detail: 'request_error' });
             }
         }
     };
 
-    for (let i = 0; i < uniqueTxids.length; i += concurrency) {
-        const chunk = uniqueTxids.slice(i, i + concurrency);
-        // Processa em paralelo controlado para reduzir tempo total sem sobrecarregar a API.
-        await Promise.all(chunk.map((txid) => runOne(txid)));
+    for (let i = 0; i < candidates.length; i += concurrency) {
+        const chunk = candidates.slice(i, i + concurrency);
+        await Promise.all(chunk.map((entry) => runOne(entry)));
     }
 
     res.status(200).json({
         ok: true,
-        source: 'ativushub',
+        source: 'multi_gateway',
         scannedRows: Number(txidList.scannedRows || 0),
-        candidates: uniqueTxids.length,
+        candidates: candidates.length,
         checked,
         confirmed,
         pending,
@@ -1081,6 +1239,7 @@ async function pixReconcile(req, res) {
             : null,
         includeConfirmed,
         updated,
+        gatewaySummary,
         failedDetails
     });
 }
