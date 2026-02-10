@@ -2254,59 +2254,88 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(8, 10, 16, 0.66);
+    backdrop-filter: blur(3px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
-    z-index: 1000;
+    z-index: 9999;
 }
 
 .modal.hidden {
-    display: none;
-}
-
-.modal-card {
-    background: #fff;
-    border-radius: 18px;
-    padding: 22px;
-    max-width: 420px;
-    width: 100%;
-    text-align: center;
-    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+    display: none !important;
+    pointer-events: none;
 }
 
 .modal-badge {
     display: inline-flex;
-    padding: 6px 12px;
+    padding: 7px 14px;
     border-radius: 999px;
-    background: #ea1d2c;
+    background: linear-gradient(180deg, #ff3d4d 0%, #ea1d2c 100%);
     color: #fff;
     font-weight: 700;
-    font-size: 0.75rem;
-    letter-spacing: 0.02em;
-    margin-bottom: 10px;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+.modal-card {
+    background: #fff;
+    border-radius: 24px;
+    border: 1px solid #f4d6d8;
+    padding: 24px 22px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 26px 56px rgba(10, 14, 24, 0.34);
 }
 
 .modal-card h3 {
-    margin: 6px 0 8px;
-    font-size: 1.25rem;
+    margin: 4px 0 10px;
+    font-size: 1.36rem;
+    line-height: 1.2;
+    color: #131313;
 }
 
 .modal-card p {
-    margin: 0 0 14px;
-    color: #5f5f5f;
+    margin: 0 0 12px;
+    color: #585858;
+    line-height: 1.45;
 }
 
 .coupon-prices {
     display: flex;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
     align-items: center;
-    margin-bottom: 16px;
-    font-size: 1.1rem;
+    margin-bottom: 10px;
+    font-size: 1.16rem;
 }
 
-.modal.hidden {
-    pointer-events: none;
+.coupon-subtitle {
+    display: block;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: #7a7a7a;
+}
+
+.modal-card .btn-primary {
+    width: 100%;
+    min-height: 56px;
+    border-radius: 16px;
+    font-size: 1.06rem;
+    box-shadow: 0 14px 30px rgba(234, 29, 44, 0.24);
+}
+
+@media (max-width: 480px) {
+    .modal {
+        padding: 16px;
+    }
+
+    .modal-card {
+        border-radius: 20px;
+        padding: 20px 16px;
+    }
 }
