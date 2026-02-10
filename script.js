@@ -1,92 +1,93 @@
 ﻿const questions = {
     start: {
         id: 'start',
-        text: 'Voc\u00ea j\u00e1 realiza entregas pelo iFood?',
+        text: 'Você já realiza entregas pelo iFood?',
         options: [
-            { text: 'Sim, j\u00e1 sou parceiro', icon: '\uD83D\uDEF5', next: 'tempo_atividade' },
-            { text: 'Ainda n\u00e3o, quero come\u00e7ar', icon: '\uD83D\uDE80', next: 'possu_veiculo' }
+            { text: 'Sim, já sou parceiro', icon: '🛵', next: 'tempo_atividade' },
+            { text: 'Ainda não, quero começar', icon: '🚀', next: 'possu_veiculo' }
         ]
     },
     tempo_atividade: {
         id: 'tempo_atividade',
-        text: 'H\u00e1 quanto tempo voc\u00ea est\u00e1 nas entregas?',
+        text: 'Há quanto tempo você está nas entregas?',
         options: [
-            { text: 'Estou come\u00e7ando agora', icon: '\uD83C\uDF31', next: 'disponibilidade' },
-            { text: 'Menos de 1 ano', icon: '\u2B50', next: 'disponibilidade' },
-            { text: 'Mais de 1 ano', icon: '\uD83C\uDFC6', next: 'disponibilidade' }
+            { text: 'Estou começando agora', icon: '🌱', next: 'disponibilidade' },
+            { text: 'Menos de 1 ano', icon: '⭐', next: 'disponibilidade' },
+            { text: 'Mais de 1 ano', icon: '🏆', next: 'disponibilidade' }
         ]
     },
     possu_veiculo: {
         id: 'possu_veiculo',
-        text: 'Voc\u00ea j\u00e1 tem ve\u00edculo para entregas?',
+        text: 'Você já tem veículo para entregas?',
         options: [
-            { text: 'Sim, j\u00e1 tenho', icon: '\u2705', next: 'tipo_veiculo' },
-            { text: 'Estou providenciando', icon: '\uD83D\uDEE0\uFE0F', next: 'tipo_veiculo' }
+            { text: 'Sim, já tenho', icon: '✅', next: 'tipo_veiculo' },
+            { text: 'Estou providenciando', icon: '🛠️', next: 'tipo_veiculo' }
         ]
     },
     tipo_veiculo: {
         id: 'tipo_veiculo',
-        text: 'Qual ser\u00e1 seu principal meio de entrega?',
+        text: 'Qual será seu principal meio de entrega?',
         options: [
-            { text: 'Moto', icon: '\uD83C\uDFCD\uFE0F', next: 'cnh_status' },
-            { text: 'Bicicleta', icon: '\uD83D\uDEB2', next: 'disponibilidade' }
+            { text: 'Moto', icon: '🏍️', next: 'cnh_status' },
+            { text: 'Bicicleta', icon: '🚲', next: 'disponibilidade' }
         ]
     },
     cnh_status: {
         id: 'cnh_status',
-        text: 'Qual \u00e9 a situa\u00e7\u00e3o da sua CNH?',
+        text: 'Qual é a situação da sua CNH?',
         options: [
-            { text: 'EAR (Atividade remunerada)', icon: '\u2705', next: 'disponibilidade' },
-            { text: 'CNH comum (sem EAR)', icon: '\u26A0\uFE0F', next: 'disponibilidade' },
-            { text: 'Provis\u00f3ria', icon: '\uD83D\uDD30', next: 'disponibilidade' }
+            { text: 'EAR (Atividade remunerada)', icon: '✅', next: 'disponibilidade' },
+            { text: 'CNH comum (sem EAR)', icon: '⚠️', next: 'disponibilidade' },
+            { text: 'Provisória', icon: '🔰', next: 'disponibilidade' }
         ]
     },
     disponibilidade: {
         id: 'disponibilidade',
-        text: 'Quantas horas por dia voc\u00ea pretende ficar online?',
+        text: 'Quantas horas por dia você pretende ficar online?',
         options: [
-            { text: 'At\u00e9 4 horas', icon: '\u23F1\uFE0F', next: 'objetivo_renda' },
-            { text: '4 a 8 horas', icon: '\uD83D\uDCBC', next: 'objetivo_renda' },
-            { text: 'Mais de 8 horas', icon: '\uD83D\uDE80', next: 'objetivo_renda' }
+            { text: 'Até 4 horas', icon: '⏱️', next: 'objetivo_renda' },
+            { text: '4 a 8 horas', icon: '💼', next: 'objetivo_renda' },
+            { text: 'Mais de 8 horas', icon: '🚀', next: 'objetivo_renda' }
         ]
     },
     objetivo_renda: {
         id: 'objetivo_renda',
-        text: 'Qual \u00e9 seu objetivo com as entregas?',
+        text: 'Qual é seu objetivo com as entregas?',
         options: [
-            { text: 'Renda extra', icon: '\uD83D\uDCA1', next: 'regiao_preferencia' },
-            { text: 'Renda principal', icon: '\uD83D\uDCC8', next: 'regiao_preferencia' },
-            { text: 'Quero crescer r\u00e1pido', icon: '\uD83D\uDD25', next: 'regiao_preferencia' }
+            { text: 'Renda extra', icon: '💡', next: 'regiao_preferencia' },
+            { text: 'Renda principal', icon: '📈', next: 'regiao_preferencia' },
+            { text: 'Quero crescer rápido', icon: '🔥', next: 'regiao_preferencia' }
         ]
     },
     regiao_preferencia: {
         id: 'regiao_preferencia',
-        text: 'Onde voc\u00ea prefere atuar?',
+        text: 'Onde você prefere atuar?',
         options: [
-            { text: 'Centro e arredores', icon: '\uD83C\uDFD9\uFE0F', next: 'equipamento' },
-            { text: 'Bairros residenciais', icon: '\uD83C\uDFE1', next: 'equipamento' },
-            { text: 'Pr\u00f3ximo a shoppings', icon: '\uD83D\uDECD\uFE0F', next: 'equipamento' }
+            { text: 'Centro e arredores', icon: '🏙️', next: 'equipamento' },
+            { text: 'Bairros residenciais', icon: '🏡', next: 'equipamento' },
+            { text: 'Próximo a shoppings', icon: '🛍️', next: 'equipamento' }
         ]
     },
     equipamento: {
         id: 'equipamento',
-        text: 'Voc\u00ea j\u00e1 tem bag t\u00e9rmica em boas condi\u00e7\u00f5es?',
+        text: 'Você já tem bag térmica em boas condições?',
         options: [
-            { text: 'Sim, mas preciso trocar', icon: '\u267B\uFE0F', next: 'horario_pico' },
-            { text: 'N\u00e3o tenho, preciso da primeira', icon: '\uD83C\uDF92', next: 'horario_pico' },
-            { text: 'Tenho e quero uma reserva', icon: '\u2705', next: 'horario_pico' }
+            { text: 'Sim, mas preciso trocar', icon: '♻️', next: 'horario_pico' },
+            { text: 'Não tenho, preciso da primeira', icon: '🎒', next: 'horario_pico' },
+            { text: 'Tenho e quero uma reserva', icon: '✅', next: 'horario_pico' }
         ]
     },
     horario_pico: {
         id: 'horario_pico',
-        text: 'Voc\u00ea consegue rodar em hor\u00e1rios de pico (almo\u00e7o/jantar)?',
+        text: 'Você consegue rodar em horários de pico (almoço/jantar)?',
         options: [
-            { text: 'Sim, com certeza', icon: '\uD83D\uDD25', next: 'personal_step' },
-            { text: 'Consigo \u00e0s vezes', icon: '\uD83D\uDCC5', next: 'personal_step' },
-            { text: 'Prefiro hor\u00e1rios alternativos', icon: '\uD83C\uDF19', next: 'personal_step' }
+            { text: 'Sim, com certeza', icon: '🔥', next: 'personal_step' },
+            { text: 'Consigo às vezes', icon: '📅', next: 'personal_step' },
+            { text: 'Prefiro horários alternativos', icon: '🌙', next: 'personal_step' }
         ]
     }
 };
+
 const STORAGE_KEYS = {
     personal: 'ifoodbag.personal',
     address: 'ifoodbag.address',
@@ -121,85 +122,52 @@ const state = {
 const dom = {};
 const pathMemo = {};
 
-const initFlags = {
-    home: false,
-    quiz: false,
-    personal: false,
-    cep: false,
-    processing: false,
-    success: false,
-    checkout: false,
-    orderbump: false,
-    pix: false,
-    admin: false
-};
-let bootCoreDone = false;
-let bootAttempts = 0;
-const BOOT_MAX_ATTEMPTS = 20;
+document.addEventListener('DOMContentLoaded', () => {
+    cacheCommonDom();
+    captureUtmParams();
+    ensureApiSession().catch(() => null);
+    initMarketing().catch(() => null);
+    initStockCounter();
 
-function boot() {
     const page = document.body.dataset.page || '';
-    if (!bootCoreDone) {
-        cacheCommonDom();
-        captureUtmParams();
-        ensureApiSession().catch(() => null);
-        initMarketing().catch(() => null);
-        initStockCounter();
-
-        if (page && page !== 'admin') {
-            trackPageView(page);
-        }
-        bootCoreDone = true;
+    if (page && page !== 'admin') {
+        trackPageView(page);
     }
-
-    let initialized = true;
     switch (page) {
         case 'home':
-            initialized = initHome();
+            initHome();
             break;
         case 'quiz':
-            initialized = initQuiz();
+            initQuiz();
             break;
         case 'personal':
-            initialized = initPersonal();
+            initPersonal();
             break;
         case 'cep':
-            initialized = initCep();
+            initCep();
             break;
         case 'processing':
-            initialized = initProcessing();
+            initProcessing();
             break;
         case 'success':
-            initialized = initSuccess();
+            initSuccess();
             break;
         case 'checkout':
-            initialized = initCheckout();
+            initCheckout();
             break;
         case 'orderbump':
-            initialized = initOrderBump();
+            initOrderBump();
             break;
         case 'pix':
-            initialized = initPix();
+            initPix();
             break;
         case 'admin':
-            initialized = initAdmin();
+            initAdmin();
             break;
         default:
-            initialized = true;
             break;
     }
-
-    if (!initialized && bootAttempts < BOOT_MAX_ATTEMPTS) {
-        bootAttempts += 1;
-        setTimeout(boot, 60);
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    boot();
 });
-
-window.ifoodBoot = boot;
 
 function cacheCommonDom() {
     dom.stockCounter = document.getElementById('stock-counter');
@@ -207,22 +175,17 @@ function cacheCommonDom() {
 }
 
 function initHome() {
-    if (initFlags.home) return true;
     const btnStart = document.getElementById('btn-start');
-    if (!btnStart) return false;
 
-    btnStart.addEventListener('click', () => {
+    btnStart?.addEventListener('click', () => {
         resetFlow();
         setStage('quiz');
         trackLead('quiz_started', { stage: 'quiz' });
         redirect('quiz.html');
     });
-    initFlags.home = true;
-    return true;
 }
 
 function initQuiz() {
-    if (initFlags.quiz) return true;
     const currentStage = getStage();
     if (!currentStage || currentStage === 'quiz' || currentStage === 'personal') {
         setStage('quiz');
@@ -234,7 +197,7 @@ function initQuiz() {
     const questionCount = document.getElementById('question-count');
     const progressFill = document.getElementById('progress-fill');
 
-    if (!questionText || !optionsContainer || !questionCount || !progressFill) return false;
+    if (!questionText || !optionsContainer || !questionCount || !progressFill) return;
 
     state.currentQuestionKey = 'start';
     state.currentStepIndex = 1;
@@ -247,12 +210,9 @@ function initQuiz() {
         questionCount,
         progressFill
     });
-    initFlags.quiz = true;
-    return true;
 }
 
 function initPersonal() {
-    if (initFlags.personal) return true;
     setStage('personal');
     trackLead('personal_view', { stage: 'personal' });
     const returnTo = getReturnTarget();
@@ -278,8 +238,7 @@ function initPersonal() {
     phone?.addEventListener('input', () => maskPhone(phone));
     birthdate?.addEventListener('input', () => maskDate(birthdate));
 
-    if (!form) return false;
-    form.addEventListener('submit', (event) => {
+    form?.addEventListener('submit', (event) => {
         event.preventDefault();
         clearInlineError(errorBox);
 
@@ -295,22 +254,22 @@ function initPersonal() {
         }
 
         if (!isValidDate(birthValue)) {
-            showInlineError(errorBox, 'Digite uma data v\u00e1lida (DD/MM/AAAA).');
+            showInlineError(errorBox, 'Digite uma data válida (DD/MM/AAAA).');
             return;
         }
 
         if (!validateCPF(cpfValue)) {
-            showInlineError(errorBox, 'CPF inv\u00e1lido. Verifique os n\u00fameros digitados.');
+            showInlineError(errorBox, 'CPF inválido. Verifique os números digitados.');
             return;
         }
 
         if (!isValidEmail(emailValue)) {
-            showInlineError(errorBox, 'Digite um e-mail v\u00e1lido.');
+            showInlineError(errorBox, 'Digite um e-mail válido.');
             return;
         }
 
         if (!isValidPhone(phoneValue)) {
-            showInlineError(errorBox, 'Digite um telefone v\u00e1lido com DDD.');
+            showInlineError(errorBox, 'Digite um telefone válido com DDD.');
             return;
         }
 
@@ -339,13 +298,10 @@ function initPersonal() {
     });
 
     focusFirstControl(form);
-    initFlags.personal = true;
-    return true;
 }
 
 function initCep() {
-    if (initFlags.cep) return true;
-    if (!requirePersonal()) return false;
+    if (!requirePersonal()) return;
     setStage('cep');
     trackLead('cep_view', { stage: 'cep' });
     const returnTo = getReturnTarget();
@@ -360,8 +316,6 @@ function initCep() {
     const freightBox = document.getElementById('freight-calculation');
     const btnConfirm = document.getElementById('btn-confirm-address');
 
-    if (!cepInput || !btnBuscar || !btnConfirm) return false;
-
     const savedAddress = loadAddress();
     if (savedAddress && cepInput) {
         cepInput.value = savedAddress.cep || '';
@@ -369,10 +323,10 @@ function initCep() {
         if (addrCity) addrCity.innerText = savedAddress.cityLine || '';
         setHidden(addressResult, false);
         setHidden(freightBox, false);
-        btnBuscar.classList.add('hidden');
+        btnBuscar?.classList.add('hidden');
     }
 
-    cepInput.addEventListener('input', () => {
+    cepInput?.addEventListener('input', () => {
         maskCep(cepInput);
         resetCepResults(errorBox, addressResult, freightBox, btnBuscar, loadingRow);
     });
@@ -393,12 +347,13 @@ function initCep() {
         throw new Error('CEP nao encontrado');
     };
 
-    btnBuscar.addEventListener('click', async () => {
+    btnBuscar?.addEventListener('click', async () => {
+        if (!cepInput) return;
         clearInlineError(errorBox);
 
         const rawCep = cepInput.value.replace(/\D/g, '');
         if (rawCep.length !== 8) {
-            showInlineError(errorBox, 'Por favor, digite um CEP v\u00e1lido.');
+            showInlineError(errorBox, 'Por favor, digite um CEP válido.');
             return;
         }
 
@@ -413,8 +368,8 @@ function initCep() {
             const data = await fetchCepData(rawCep, 1);
             const street = (data.street || '').trim();
             const neighborhood = (data.neighborhood || '').trim();
-            const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
-            const city = (data.city || 'Cidade n\u00e3o informada').trim();
+            const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+            const city = (data.city || 'Cidade não informada').trim();
             const stateUf = (data.state || '').trim();
             const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -459,7 +414,7 @@ function initCep() {
         }
     });
 
-    btnConfirm.addEventListener('click', () => {
+    btnConfirm?.addEventListener('click', () => {
         if (!loadAddress()) {
             showInlineError(errorBox, 'Confirme o CEP para continuar.');
             return;
@@ -475,14 +430,11 @@ function initCep() {
     });
 
     focusFirstControl(document.querySelector('.step'));
-    initFlags.cep = true;
-    return true;
 }
 
 function initProcessing() {
-    if (initFlags.processing) return true;
-    if (!requirePersonal()) return false;
-    if (!requireAddress()) return false;
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
 
     setStage('processing');
     trackLead('processing_view', { stage: 'processing' });
@@ -495,10 +447,9 @@ function initProcessing() {
     const verifiedEl = document.getElementById('processing-verified');
     const overlayEl = document.getElementById('vsl-audio-overlay');
     const overlayBtn = document.getElementById('vsl-audio-btn');
-    if (!textEl || !progressEl || !progressLabelEl) return false;
     const loadingTexts = [
-        'Verificando estoque da bag na sua regi\u00e3o...',
-        'Validando seus dados com seguran\u00e7a...',
+        'Verificando estoque da bag na sua região...',
+        'Validando seus dados com segurança...',
         'Confirmando sua prioridade na fila...',
         'Liberando o acesso ao resgate...'
     ];
@@ -605,7 +556,7 @@ function initProcessing() {
                 verifiedEl.classList.remove('hidden');
                 verifiedEl.setAttribute('aria-hidden', 'false');
             }
-            updateText('Verifica\u00e7\u00e3o conclu\u00edda.');
+            updateText('Verificação concluída.');
 
             setTimeout(() => {
                 setStage('success');
@@ -619,14 +570,6 @@ function initProcessing() {
             videoEl.defaultMuted = false;
             videoEl.muted = false;
             videoEl.volume = preferredVolume;
-            videoEl.removeAttribute('muted');
-        };
-
-        const enableMutedAutoplay = () => {
-            videoEl.defaultMuted = true;
-            videoEl.muted = true;
-            videoEl.volume = 0;
-            videoEl.setAttribute('muted', '');
         };
 
         const syncVideoProgress = () => {
@@ -656,22 +599,16 @@ function initProcessing() {
         videoEl.setAttribute('playsinline', '');
         videoEl.setAttribute('webkit-playsinline', '');
         videoEl.preload = 'auto';
-        enableMutedAutoplay();
+        applyPreferredAudio();
 
-        const tryPlay = (withAudio = false) => {
-            if (withAudio) applyPreferredAudio();
-            else enableMutedAutoplay();
+        const tryPlay = () => {
+            applyPreferredAudio();
             const playPromise = videoEl.play();
             if (playPromise && typeof playPromise.catch === 'function') {
-                playPromise
-                    .then(() => {
-                        if (videoEl.muted) showOverlay();
-                        else hideOverlay();
-                    })
-                    .catch(() => {
-                        showOverlay();
-                        safeStart();
-                    });
+                playPromise.catch(() => {
+                    showOverlay();
+                    safeStart();
+                });
             }
         };
 
@@ -682,11 +619,10 @@ function initProcessing() {
                     clearAutoplayGuard();
                     return;
                 }
+                applyPreferredAudio();
                 if (videoEl.paused) {
                     showOverlay();
-                    tryPlay(false);
-                } else if (videoEl.muted) {
-                    showOverlay();
+                    tryPlay();
                 } else {
                     hideOverlay();
                     clearAutoplayGuard();
@@ -695,7 +631,8 @@ function initProcessing() {
         };
 
         const unlockAudio = () => {
-            tryPlay(true);
+            applyPreferredAudio();
+            tryPlay();
             document.removeEventListener('click', unlockAudio);
             document.removeEventListener('touchstart', unlockAudio);
             document.removeEventListener('pointerdown', unlockAudio);
@@ -705,36 +642,27 @@ function initProcessing() {
         document.addEventListener('touchstart', unlockAudio, { once: true });
         document.addEventListener('pointerdown', unlockAudio, { once: true });
 
-        videoEl.addEventListener('play', () => {
-            if (videoEl.muted) showOverlay();
-            else hideOverlay();
-        });
-        videoEl.addEventListener('playing', () => {
-            if (videoEl.muted) showOverlay();
-            else hideOverlay();
-        });
+        videoEl.addEventListener('play', hideOverlay);
+        videoEl.addEventListener('playing', hideOverlay);
         videoEl.addEventListener('pause', () => {
             if (!finishTriggered) showOverlay();
         });
 
         overlayBtn?.addEventListener('click', () => {
-            tryPlay(true);
+            applyPreferredAudio();
+            tryPlay();
         });
 
         startAutoplayGuard();
-        tryPlay(false);
+        tryPlay();
     } else {
         startTimeline(30000, true);
     }
-
-    initFlags.processing = true;
-    return true;
 }
 
 function initSuccess() {
-    if (initFlags.success) return true;
-    if (!requirePersonal()) return false;
-    if (!requireAddress()) return false;
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
 
     setStage('success');
     trackLead('success_view', { stage: 'success' });
@@ -743,7 +671,6 @@ function initSuccess() {
     const leadName = document.getElementById('lead-name');
     const timer = document.getElementById('timer');
     const btnCheckout = document.getElementById('btn-checkout');
-    if (!btnCheckout) return false;
 
     if (leadName && personal?.name) {
         const firstName = personal.name.trim().split(/\s+/)[0];
@@ -752,19 +679,16 @@ function initSuccess() {
 
     startTimer(300, timer);
 
-    btnCheckout.addEventListener('click', () => {
+    btnCheckout?.addEventListener('click', () => {
         trackLead('success_cta', { stage: 'success' });
         setStage('checkout');
         redirect('checkout.html');
     });
-    initFlags.success = true;
-    return true;
 }
 
 function initCheckout() {
-    if (initFlags.checkout) return true;
-    if (!requirePersonal()) return false;
-    if (!requireAddress()) return false;
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
 
     setStage('checkout');
     trackLead('checkout_view', { stage: 'checkout' });
@@ -798,8 +722,6 @@ function initCheckout() {
     const shippingTotal = document.getElementById('shipping-total');
     const btnFinish = document.getElementById('btn-finish');
 
-    if (!btnCalcFreight || !freightOptions || !btnFinish) return false;
-
     if (summaryName) summaryName.textContent = personal?.name || '-';
     if (summaryCpf) summaryCpf.textContent = personal?.cpf || '-';
     if (summaryBirth) summaryBirth.textContent = personal?.birth || '-';
@@ -810,7 +732,7 @@ function initCheckout() {
         const numberValue = (extra?.number || '').trim();
         const numberText = extra?.noNumber ? 's/n' : numberValue;
         const streetWithNumber = numberText ? `${base}, ${numberText}` : base;
-        return `${streetWithNumber} ? ${city}`;
+        return `${streetWithNumber} · ${city}`;
     };
 
     const updateSummaryAddress = () => {
@@ -836,14 +758,14 @@ function initCheckout() {
 
         fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
             .then((res) => {
-                if (!res.ok) throw new Error('CEP n\u00e3o encontrado');
+                if (!res.ok) throw new Error('CEP não encontrado');
                 return res.json();
             })
             .then((data) => {
                 const street = (data.street || '').trim();
                 const neighborhood = (data.neighborhood || '').trim();
-                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
-                const city = (data.city || 'Cidade n\u00e3o informada').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+                const city = (data.city || 'Cidade não informada').trim();
                 const stateUf = (data.state || '').trim();
                 const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -864,7 +786,7 @@ function initCheckout() {
                 updateFreightAddress(updatedAddress);
             })
             .catch(() => {
-                showToast('CEP n\u00e3o encontrado. Verifique e tente novamente.', 'error');
+                showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
             })
             .finally(() => {
                 if (freightLoading) setHidden(freightLoading, true);
@@ -925,8 +847,8 @@ function initCheckout() {
 
     const updateFreightAddress = (addr) => {
         if (!freightAddress) return;
-        if (freightStreet) freightStreet.textContent = addr?.streetLine || 'Rua n\u00e3o informada';
-        if (freightCity) freightCity.textContent = addr?.cityLine || 'Cidade n\u00e3o informada';
+        if (freightStreet) freightStreet.textContent = addr?.streetLine || 'Rua não informada';
+        if (freightCity) freightCity.textContent = addr?.cityLine || 'Cidade não informada';
         setHidden(freightAddress, false);
     };
 
@@ -1015,7 +937,7 @@ function initCheckout() {
     const calcShipping = () => {
         const rawCep = (checkoutCep?.value || '').replace(/\D/g, '');
         if (rawCep.length !== 8) {
-            showToast('Digite um CEP v\u00e1lido para calcular o frete.', 'error');
+            showToast('Digite um CEP válido para calcular o frete.', 'error');
             return;
         }
 
@@ -1039,14 +961,14 @@ function initCheckout() {
 
         fetch(`https://brasilapi.com.br/api/cep/v1/${rawCep}`)
             .then((res) => {
-                if (!res.ok) throw new Error('CEP n\u00e3o encontrado');
+                if (!res.ok) throw new Error('CEP não encontrado');
                 return res.json();
             })
             .then((data) => {
                 const street = (data.street || '').trim();
                 const neighborhood = (data.neighborhood || '').trim();
-                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua n\u00e3o informada';
-                const city = (data.city || 'Cidade n\u00e3o informada').trim();
+                const streetLine = [street, neighborhood].filter(Boolean).join(', ') || 'Rua não informada';
+                const city = (data.city || 'Cidade não informada').trim();
                 const stateUf = (data.state || '').trim();
                 const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
@@ -1098,7 +1020,7 @@ function initCheckout() {
                 const elapsed = Date.now() - startTime;
                 const remaining = Math.max(0, minDelay - elapsed);
                 setTimeout(() => {
-                    showToast('CEP n\u00e3o encontrado. Verifique e tente novamente.', 'error');
+                    showToast('CEP não encontrado. Verifique e tente novamente.', 'error');
                     setHidden(freightLoading, true);
                     if (btnCalcFreight) {
                         btnCalcFreight.classList.remove('hidden');
@@ -1185,7 +1107,7 @@ function initCheckout() {
         syncShippingAfterAddressEdit();
     }
 
-    btnFinish.addEventListener('click', () => {
+    btnFinish?.addEventListener('click', () => {
         if (!btnFinish) return;
         if (!shipping) {
             showToast('Selecione um frete para continuar.', 'error');
@@ -1212,20 +1134,17 @@ function initCheckout() {
                 redirect('orderbump.html');
             });
     });
-    initFlags.checkout = true;
-    return true;
 }
 
 function initOrderBump() {
-    if (initFlags.orderbump) return true;
-    if (!requirePersonal()) return false;
-    if (!requireAddress()) return false;
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
 
     const shipping = loadShipping();
     if (!shipping) {
         setStage('checkout');
         redirect('checkout.html');
-        return false;
+        return;
     }
 
     setStage('orderbump');
@@ -1277,15 +1196,11 @@ function initOrderBump() {
             });
     };
 
-    if (!btnAccept || !btnDecline) return false;
-    btnAccept.addEventListener('click', () => proceedToPix(true));
-    btnDecline.addEventListener('click', () => proceedToPix(false));
-    initFlags.orderbump = true;
-    return true;
+    btnAccept?.addEventListener('click', () => proceedToPix(true));
+    btnDecline?.addEventListener('click', () => proceedToPix(false));
 }
 
 function initPix() {
-    if (initFlags.pix) return true;
     const pix = loadPix();
     const shipping = loadShipping();
     const pixQr = document.getElementById('pix-qr');
@@ -1304,8 +1219,7 @@ function initPix() {
     if (!pix) {
         if (pixEmpty) pixEmpty.classList.remove('hidden');
         if (pixCard) pixCard.classList.add('hidden');
-        initFlags.pix = true;
-        return true;
+        return;
     }
 
     trackLead('pix_view', { stage: 'pix', shipping });
@@ -1362,7 +1276,7 @@ function initPix() {
 
     if (pixOrderId) {
         const id = String(pix.idTransaction || '').trim();
-        pixOrderId.textContent = id ? id.slice(-6) : '-';
+        pixOrderId.textContent = id ? id.slice(-6) : '—';
     }
 
     if (pixTimer && pixProgress) {
@@ -1386,18 +1300,14 @@ function initPix() {
         updateTimer();
         timerId = setInterval(updateTimer, 1000);
     }
-    initFlags.pix = true;
-    return true;
 }
 
 function initAdmin() {
-    if (initFlags.admin) return true;
     const loginWrap = document.getElementById('admin-login');
     const panelWrap = document.getElementById('admin-panel');
     const loginBtn = document.getElementById('admin-login-btn');
     const loginError = document.getElementById('admin-login-error');
     const passwordInput = document.getElementById('admin-password');
-    if (!loginWrap || !panelWrap || !loginBtn || !passwordInput) return false;
 
     const pixelEnabled = document.getElementById('pixel-enabled');
     const pixelId = document.getElementById('pixel-id');
@@ -1835,27 +1745,14 @@ function initAdmin() {
         const data = await res.json();
         const rows = data.data || [];
         const max = rows.reduce((acc, row) => Math.max(acc, Number(row.total) || 0), 0) || 1;
-        const pageMeta = {
-            home: { label: 'index.html', desc: 'Pagina inicial (entrada do funil)' },
-            quiz: { label: 'quiz.html', desc: 'Perguntas de qualificacao' },
-            personal: { label: 'dados.html', desc: 'Coleta de dados pessoais' },
-            cep: { label: 'endereco.html', desc: 'Consulta e confirmacao de CEP' },
-            processing: { label: 'processando.html', desc: 'Video + verificacao de elegibilidade' },
-            success: { label: 'sucesso.html', desc: 'Aprovado e chamada para resgate' },
-            checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
-            orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
-            pix: { label: 'pix.html', desc: 'Pagamento via PIX' }
-        };
         pagesGrid.innerHTML = '';
         rows.forEach((row) => {
             const card = document.createElement('div');
             card.className = 'admin-page-card';
             const pct = Math.round(((Number(row.total) || 0) / max) * 100);
-            const meta = pageMeta[row.page] || { label: row.page || '-', desc: '' };
             card.innerHTML = `
                 <strong>${row.total ?? 0}</strong>
-                <span>${meta.label || '-'}</span>
-                ${meta.desc ? `<em>${meta.desc}</em>` : ''}
+                <span>${row.page || '-'}</span>
                 <div class="admin-page-bar"><i style="width: ${pct}%"></i></div>
             `;
             pagesGrid.appendChild(card);
@@ -1863,6 +1760,17 @@ function initAdmin() {
 
         if (pagesInsights) {
             const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix'];
+            const pageMeta = {
+                home: { label: 'index.html', desc: 'Pagina inicial (entrada do funil)' },
+                quiz: { label: 'quiz.html', desc: 'Perguntas de qualificacao' },
+                personal: { label: 'dados.html', desc: 'Coleta de dados pessoais' },
+                cep: { label: 'endereco.html', desc: 'Consulta e confirmacao de CEP' },
+                processing: { label: 'processando.html', desc: 'Video + verificacao de elegibilidade' },
+                success: { label: 'sucesso.html', desc: 'Aprovado e chamada para resgate' },
+                checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
+                orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
+                pix: { label: 'pix.html', desc: 'Pagamento via PIX' }
+            };
             const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
             pagesInsights.innerHTML = '';
             let prevEffective = null;
@@ -1950,8 +1858,6 @@ function initAdmin() {
             setLoginVisible(true);
         }
     });
-    initFlags.admin = true;
-    return true;
 }
 
 function renderQuestion(questionConfig, refs) {
@@ -2002,7 +1908,7 @@ function handleAnswer(btnElement, option, refs) {
         );
 
         if (!questions[state.currentQuestionKey]) {
-            showToast('Ocorreu um erro ao carregar a pr\u00f3xima pergunta.', 'error');
+            showToast('Ocorreu um erro ao carregar a próxima pergunta.', 'error');
             state.answerLocked = false;
             return;
         }
@@ -2166,21 +2072,21 @@ function buildShippingOptions(rawCep) {
     return [
         {
             id: 'economico',
-            name: 'Envio Econ\u00f4mico iFood',
+            name: 'Envio Econômico iFood',
             price: 19.9,
-            eta: '5 a 8 dias \u00fateis'
+            eta: '5 a 8 dias úteis'
         },
         {
             id: 'padrao',
-            name: 'Envio Padr\u00e3o iFood',
+            name: 'Envio Padrão iFood',
             price: 25.9,
-            eta: '3 a 5 dias \u00fateis'
+            eta: '3 a 5 dias úteis'
         },
         {
             id: 'expresso',
-            name: 'Envio Priorit\u00e1rio iFood',
+            name: 'Envio Prioritário iFood',
             price: 29.9,
-            eta: '1 a 3 dias \u00fateis'
+            eta: '1 a 3 dias úteis'
         }
     ];
 }
@@ -2317,7 +2223,7 @@ async function ensureApiSession(force = false) {
         credentials: 'same-origin'
     })
         .then((res) => {
-            if (!res.ok) return false;
+            if (!res.ok) throw new Error('Falha ao iniciar sessão segura.');
             state.apiSessionAt = Date.now();
             return true;
         })
