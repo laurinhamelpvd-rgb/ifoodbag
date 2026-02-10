@@ -2255,8 +2255,14 @@ function initAdmin() {
     const gatewayGhostspaySecretKey = document.getElementById('gateway-ghostspay-secret-key');
     const gatewayGhostspayCompanyId = document.getElementById('gateway-ghostspay-company-id');
     const gatewayGhostspayWebhookToken = document.getElementById('gateway-ghostspay-webhook-token');
+    const gatewaySunizeEnabled = document.getElementById('gateway-sunize-enabled');
+    const gatewaySunizeBaseUrl = document.getElementById('gateway-sunize-base-url');
+    const gatewaySunizeApiKey = document.getElementById('gateway-sunize-api-key');
+    const gatewaySunizeApiSecret = document.getElementById('gateway-sunize-api-secret');
+    const gatewaySunizeWebhookToken = document.getElementById('gateway-sunize-webhook-token');
     const gatewayAtivushubState = document.getElementById('gateway-ativushub-state');
     const gatewayGhostspayState = document.getElementById('gateway-ghostspay-state');
+    const gatewaySunizeState = document.getElementById('gateway-sunize-state');
     const gatewayCards = Array.from(document.querySelectorAll('[data-gateway-card]'));
     const gatewayConfigToggles = Array.from(document.querySelectorAll('[data-gateway-config-toggle]'));
 
@@ -2285,6 +2291,8 @@ function initAdmin() {
     const metricGatewayAtivushubDetail = document.getElementById('metric-gateway-ativushub-detail');
     const metricGatewayGhostspayConv = document.getElementById('metric-gateway-ghostspay-conv');
     const metricGatewayGhostspayDetail = document.getElementById('metric-gateway-ghostspay-detail');
+    const metricGatewaySunizeConv = document.getElementById('metric-gateway-sunize-conv');
+    const metricGatewaySunizeDetail = document.getElementById('metric-gateway-sunize-detail');
     const funnelPix = document.getElementById('funnel-pix');
     const funnelFrete = document.getElementById('funnel-frete');
     const funnelCep = document.getElementById('funnel-cep');
@@ -2324,7 +2332,8 @@ function initAdmin() {
         lastUpdated: '',
         gatewayStats: {
             ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
-            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
         }
     };
     const funnelPageMeta = {
@@ -2370,14 +2379,31 @@ function initAdmin() {
         gatewayGhostspayBaseUrl ||
         gatewayGhostspaySecretKey ||
         gatewayGhostspayCompanyId ||
-        gatewayGhostspayWebhookToken
+        gatewayGhostspayWebhookToken ||
+        gatewaySunizeEnabled ||
+        gatewaySunizeBaseUrl ||
+        gatewaySunizeApiKey ||
+        gatewaySunizeApiSecret ||
+        gatewaySunizeWebhookToken
     );
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
     const wantsPages = !!pagesGrid;
     const wantsBackredirects = !!backredirectGrid;
 
-    const normalizeGatewayKey = (value) => (String(value || '').toLowerCase() === 'ghostspay' ? 'ghostspay' : 'ativushub');
+    const normalizeGatewayKey = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'ghostspay') return 'ghostspay';
+        if (normalized === 'sunize') return 'sunize';
+        return 'ativushub';
+    };
+
+    const gatewayLabelForUi = (gateway) => {
+        const normalized = normalizeGatewayKey(gateway);
+        if (normalized === 'ghostspay') return 'GhostsPay';
+        if (normalized === 'sunize') return 'Sunize';
+        return 'AtivusHUB';
+    };
 
     const syncGatewaySwitchState = (input, label) => {
         if (!label) return;
@@ -2389,6 +2415,7 @@ function initAdmin() {
     const syncGatewaySwitches = () => {
         syncGatewaySwitchState(gatewayAtivushubEnabled, gatewayAtivushubState);
         syncGatewaySwitchState(gatewayGhostspayEnabled, gatewayGhostspayState);
+        syncGatewaySwitchState(gatewaySunizeEnabled, gatewaySunizeState);
     };
 
     const setCurrentGatewayCard = (gateway) => {
@@ -2478,6 +2505,7 @@ function initAdmin() {
             const gateways = payments.gateways || {};
             const ativushub = gateways.ativushub || {};
             const ghostspay = gateways.ghostspay || {};
+            const sunize = gateways.sunize || {};
             const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ativushub');
 
             if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
@@ -2492,13 +2520,18 @@ function initAdmin() {
             if (gatewayGhostspaySecretKey) gatewayGhostspaySecretKey.value = ghostspay.secretKey || '';
             if (gatewayGhostspayCompanyId) gatewayGhostspayCompanyId.value = ghostspay.companyId || '';
             if (gatewayGhostspayWebhookToken) gatewayGhostspayWebhookToken.value = ghostspay.webhookToken || '';
+            if (gatewaySunizeEnabled) gatewaySunizeEnabled.checked = !!sunize.enabled;
+            if (gatewaySunizeBaseUrl) gatewaySunizeBaseUrl.value = sunize.baseUrl || '';
+            if (gatewaySunizeApiKey) gatewaySunizeApiKey.value = sunize.apiKey || '';
+            if (gatewaySunizeApiSecret) gatewaySunizeApiSecret.value = sunize.apiSecret || '';
+            if (gatewaySunizeWebhookToken) gatewaySunizeWebhookToken.value = sunize.webhookToken || '';
 
             syncGatewaySwitches();
             setCurrentGatewayCard(activeGateway);
             setGatewayCardOpen(activeGateway, true);
 
             if (metricActiveGateway) {
-                metricActiveGateway.textContent = activeGateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+                metricActiveGateway.textContent = gatewayLabelForUi(activeGateway);
             }
         }
 
@@ -2573,9 +2606,7 @@ function initAdmin() {
         }
 
         if (hasPaymentsForm) {
-            const activeGateway = String(paymentsActiveGateway?.value || 'ativushub').toLowerCase() === 'ghostspay'
-                ? 'ghostspay'
-                : 'ativushub';
+            const activeGateway = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
             payload.payments = {
                 ...(currentSettings?.payments || {}),
                 activeGateway,
@@ -2596,6 +2627,14 @@ function initAdmin() {
                         secretKey: gatewayGhostspaySecretKey?.value?.trim() || '',
                         companyId: gatewayGhostspayCompanyId?.value?.trim() || '',
                         webhookToken: gatewayGhostspayWebhookToken?.value?.trim() || ''
+                    },
+                    sunize: {
+                        ...(currentSettings?.payments?.gateways?.sunize || {}),
+                        enabled: !!gatewaySunizeEnabled?.checked,
+                        baseUrl: gatewaySunizeBaseUrl?.value?.trim() || '',
+                        apiKey: gatewaySunizeApiKey?.value?.trim() || '',
+                        apiSecret: gatewaySunizeApiSecret?.value?.trim() || '',
+                        webhookToken: gatewaySunizeWebhookToken?.value?.trim() || ''
                     }
                 }
             };
@@ -2624,7 +2663,7 @@ function initAdmin() {
             setCurrentGatewayCard(activeGateway);
             syncGatewaySwitches();
             if (metricActiveGateway) {
-                metricActiveGateway.textContent = activeGateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+                metricActiveGateway.textContent = gatewayLabelForUi(activeGateway);
             }
         }
         saveBtn.disabled = false;
@@ -2787,7 +2826,8 @@ function initAdmin() {
     const updateMetrics = (rows, reset = false, summary = null) => {
         const emptyGatewayStats = () => ({
             ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
-            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+            ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
         });
 
         if (summary && typeof summary === 'object') {
@@ -2807,6 +2847,10 @@ function initAdmin() {
                 ghostspay: {
                     ...base.ghostspay,
                     ...(source.ghostspay || {})
+                },
+                sunize: {
+                    ...base.sunize,
+                    ...(source.sunize || {})
                 }
             };
         } else {
@@ -2826,7 +2870,7 @@ function initAdmin() {
             const frete = String(row.frete || '').trim();
             const pixTxid = String(row.pix_txid || '').trim();
             const ev = String(row.evento || '').toLowerCase().trim();
-            const gateway = String(row.gateway || '').toLowerCase() === 'ghostspay' ? 'ghostspay' : 'ativushub';
+            const gateway = normalizeGatewayKey(row.gateway || 'ativushub');
             const gatewayStats = metrics.gatewayStats[gateway];
 
             gatewayStats.leads += 1;
@@ -2870,8 +2914,10 @@ function initAdmin() {
 
         const ativusStats = metrics.gatewayStats.ativushub || { pix: 0, paid: 0 };
         const ghostStats = metrics.gatewayStats.ghostspay || { pix: 0, paid: 0 };
+        const sunizeStats = metrics.gatewayStats.sunize || { pix: 0, paid: 0 };
         const ativusConv = ativusStats.pix ? Math.round((Number(ativusStats.paid || 0) / Number(ativusStats.pix || 0)) * 100) : 0;
         const ghostConv = ghostStats.pix ? Math.round((Number(ghostStats.paid || 0) / Number(ghostStats.pix || 0)) * 100) : 0;
+        const sunizeConv = sunizeStats.pix ? Math.round((Number(sunizeStats.paid || 0) / Number(sunizeStats.pix || 0)) * 100) : 0;
 
         if (metricGatewayAtivushubConv) metricGatewayAtivushubConv.textContent = `${ativusConv}%`;
         if (metricGatewayAtivushubDetail) {
@@ -2881,11 +2927,16 @@ function initAdmin() {
         if (metricGatewayGhostspayDetail) {
             metricGatewayGhostspayDetail.textContent = `${Number(ghostStats.paid || 0)} pagos / ${Number(ghostStats.pix || 0)} PIX`;
         }
+        if (metricGatewaySunizeConv) metricGatewaySunizeConv.textContent = `${sunizeConv}%`;
+        if (metricGatewaySunizeDetail) {
+            metricGatewaySunizeDetail.textContent = `${Number(sunizeStats.paid || 0)} pagos / ${Number(sunizeStats.pix || 0)} PIX`;
+        }
 
         if (metricBestGateway) {
             const options = [
                 { label: 'AtivusHUB', conv: ativusConv, paid: Number(ativusStats.paid || 0), pix: Number(ativusStats.pix || 0) },
-                { label: 'GhostsPay', conv: ghostConv, paid: Number(ghostStats.paid || 0), pix: Number(ghostStats.pix || 0) }
+                { label: 'GhostsPay', conv: ghostConv, paid: Number(ghostStats.paid || 0), pix: Number(ghostStats.pix || 0) },
+                { label: 'Sunize', conv: sunizeConv, paid: Number(sunizeStats.paid || 0), pix: Number(sunizeStats.pix || 0) }
             ].filter((item) => item.pix > 0);
             if (!options.length) {
                 metricBestGateway.textContent = '-';
@@ -3108,11 +3159,12 @@ function initAdmin() {
         setCurrentGatewayCard(selected);
         setGatewayCardOpen(selected, true);
         if (metricActiveGateway) {
-            metricActiveGateway.textContent = selected === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+            metricActiveGateway.textContent = gatewayLabelForUi(selected);
         }
     });
     gatewayAtivushubEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayGhostspayEnabled?.addEventListener('change', syncGatewaySwitches);
+    gatewaySunizeEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayConfigToggles.forEach((button) => {
         button.addEventListener('click', () => {
             const gateway = button.getAttribute('data-gateway-config-toggle') || 'ativushub';

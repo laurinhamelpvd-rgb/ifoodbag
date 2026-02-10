@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/style.css?v=3.2" />
+  <link rel="stylesheet" href="/style.css?v=3.3" />
   <script src="/backguard.js?v=1.1"></script>
   <script
     src="https://cdn.utmify.com.br/scripts/utms/latest.js"
@@ -137,6 +137,11 @@
               <strong id="metric-gateway-ghostspay-conv">0%</strong>
               <em id="metric-gateway-ghostspay-detail">0 pagos / 0 PIX</em>
             </div>
+            <div class="admin-kpi">
+              <span>Sunize</span>
+              <strong id="metric-gateway-sunize-conv">0%</strong>
+              <em id="metric-gateway-sunize-detail">0 pagos / 0 PIX</em>
+            </div>
           </div>
 
           <div class="admin-inline-actions">
@@ -158,6 +163,7 @@
               <select id="payments-active-gateway" class="floating-input">
                 <option value="ativushub">AtivusHUB</option>
                 <option value="ghostspay">GhostsPay</option>
+                <option value="sunize">Sunize</option>
               </select>
               <label for="payments-active-gateway" class="floating-label">Gateway ativo para gerar PIX</label>
             </div>
@@ -238,6 +244,43 @@
                 </div>
               </div>
             </article>
+
+            <article class="gateway-card" data-gateway-card="sunize">
+              <header class="gateway-card-header">
+                <div class="gateway-card-heading">
+                  <h3>Sunize</h3>
+                  <p>Gateway PIX com autenticacao x-api-key e x-api-secret no backend.</p>
+                </div>
+                <div class="gateway-card-actions">
+                  <label class="gateway-switch" for="gateway-sunize-enabled">
+                    <input type="checkbox" id="gateway-sunize-enabled" />
+                    <span class="gateway-switch-track" aria-hidden="true"></span>
+                    <span class="gateway-switch-text" id="gateway-sunize-state">Desligado</span>
+                  </label>
+                  <button type="button" class="btn-secondary gateway-config-toggle" data-gateway-config-toggle="sunize" aria-controls="gateway-config-sunize" aria-expanded="false">Configurar</button>
+                </div>
+              </header>
+              <div id="gateway-config-sunize" class="gateway-card-body">
+                <div class="admin-grid gateway-fields-grid">
+                  <div class="input-group">
+                    <input type="text" id="gateway-sunize-base-url" class="floating-input" placeholder=" " />
+                    <label for="gateway-sunize-base-url" class="floating-label">Sunize Base URL</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" id="gateway-sunize-api-key" class="floating-input" placeholder=" " autocomplete="new-password" />
+                    <label for="gateway-sunize-api-key" class="floating-label">Sunize x-api-key</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" id="gateway-sunize-api-secret" class="floating-input" placeholder=" " autocomplete="new-password" />
+                    <label for="gateway-sunize-api-secret" class="floating-label">Sunize x-api-secret</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" id="gateway-sunize-webhook-token" class="floating-input" placeholder=" " autocomplete="new-password" />
+                    <label for="gateway-sunize-webhook-token" class="floating-label">Sunize Webhook Token</label>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
           <p class="admin-hint">Webhook token: segredo usado na URL/header do postback para validar que a notificacao veio do gateway certo.</p>
         </section>
@@ -247,6 +290,6 @@
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/script.js?v=6.2" defer></script>
+  <script src="/script.js?v=6.3" defer></script>
 </body>
 </html>

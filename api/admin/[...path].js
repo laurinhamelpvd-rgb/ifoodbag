@@ -12,6 +12,7 @@ const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadByS
 const { sendPushcut } = require('../../lib/pushcut');
 const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
 const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
+const { requestTransactionById: requestSunizeStatus } = require('../../lib/sunize-provider');
 const {
     getAtivusStatus,
     isAtivusPaidStatus,
@@ -31,6 +32,16 @@ const {
     isGhostspayChargebackStatus,
     mapGhostspayStatusToUtmify
 } = require('../../lib/ghostspay-status');
+const {
+    getSunizeStatus,
+    getSunizeUpdatedAt,
+    getSunizeAmount,
+    isSunizePaidStatus,
+    isSunizePendingStatus,
+    isSunizeRefundedStatus,
+    isSunizeRefusedStatus,
+    mapSunizeStatusToUtmify
+} = require('../../lib/sunize-status');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 
 const fetchFn = global.fetch
@@ -103,6 +114,7 @@ function isPaidFromStatus(status) {
     return (
         s.includes('paid') ||
         s.includes('pago') ||
+        s.includes('authoriz') ||
         s.includes('approved') ||
         s.includes('aprovad') ||
         s.includes('completed') ||
@@ -140,6 +152,7 @@ function sanitizeSettingsForAdmin(settingsData = {}) {
     payload.payments.gateways = payload.payments.gateways || {};
     payload.payments.gateways.ativushub = payload.payments.gateways.ativushub || {};
     payload.payments.gateways.ghostspay = payload.payments.gateways.ghostspay || {};
+    payload.payments.gateways.sunize = payload.payments.gateways.sunize || {};
 
     payload.pixel.capi.accessToken = maskSecret(payload.pixel.capi.accessToken);
     payload.utmfy.apiKey = maskSecret(payload.utmfy.apiKey);
@@ -153,6 +166,9 @@ function sanitizeSettingsForAdmin(settingsData = {}) {
     payload.payments.gateways.ghostspay.secretKey = maskSecret(payload.payments.gateways.ghostspay.secretKey);
     payload.payments.gateways.ghostspay.basicAuthBase64 = '';
     payload.payments.gateways.ghostspay.webhookToken = maskSecret(payload.payments.gateways.ghostspay.webhookToken);
+    payload.payments.gateways.sunize.apiKey = maskSecret(payload.payments.gateways.sunize.apiKey);
+    payload.payments.gateways.sunize.apiSecret = maskSecret(payload.payments.gateways.sunize.apiSecret);
+    payload.payments.gateways.sunize.webhookToken = maskSecret(payload.payments.gateways.sunize.webhookToken);
 
     return payload;
 }
@@ -233,6 +249,7 @@ function resolveLeadGateway(row, payload) {
 }
 
 function gatewayLabel(gateway) {
+    if (gateway === 'sunize') return 'Sunize';
     return gateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
 }
 
@@ -456,6 +473,16 @@ async function getLeads(req, res) {
                 refunded: 0,
                 refused: 0,
                 pending: 0
+            },
+            sunize: {
+                gateway: 'sunize',
+                label: gatewayLabel('sunize'),
+                leads: 0,
+                pix: 0,
+                paid: 0,
+                refunded: 0,
+                refused: 0,
+                pending: 0
             }
         }
     };
@@ -490,7 +517,11 @@ async function getLeads(req, res) {
 
         rows.forEach((row) => {
             const mapped = mapLeadReadable(row);
-            const gateway = mapped.gateway === 'ghostspay' ? 'ghostspay' : 'ativushub';
+            const gateway = mapped.gateway === 'ghostspay'
+                ? 'ghostspay'
+                : mapped.gateway === 'sunize'
+                    ? 'sunize'
+                    : 'ativushub';
             const gatewaySummary = summary.gatewayStats[gateway];
             summary.total += 1;
             gatewaySummary.leads += 1;
@@ -539,8 +570,14 @@ async function getLeads(req, res) {
         label: gatewayLabel('ghostspay'),
         ...(summary.gatewayStats.ghostspay || { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 })
     };
+    summary.gatewayStats.sunize = {
+        gateway: 'sunize',
+        label: gatewayLabel('sunize'),
+        ...(summary.gatewayStats.sunize || { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 })
+    };
     summary.gatewayStats.ativushub.conversion = gatewayConversionPercent(summary.gatewayStats.ativushub);
     summary.gatewayStats.ghostspay.conversion = gatewayConversionPercent(summary.gatewayStats.ghostspay);
+    summary.gatewayStats.sunize.conversion = gatewayConversionPercent(summary.gatewayStats.sunize);
 
     res.status(200).json({ data, summary });
 }
@@ -753,6 +790,9 @@ async function settings(req, res) {
         const bodyGhost = bodyGateways.ghostspay && typeof bodyGateways.ghostspay === 'object'
             ? bodyGateways.ghostspay
             : {};
+        const bodySunize = bodyGateways.sunize && typeof bodyGateways.sunize === 'object'
+            ? bodyGateways.sunize
+            : {};
         const mergedPaymentsInput = {
             ...(bodyPayments || {}),
             gateways: {
@@ -768,6 +808,12 @@ async function settings(req, res) {
                     secretKey: pickSecretInput(bodyGhost.secretKey, currentPayments?.gateways?.ghostspay?.secretKey || ''),
                     basicAuthBase64: pickSecretInput(bodyGhost.basicAuthBase64, currentPayments?.gateways?.ghostspay?.basicAuthBase64 || ''),
                     webhookToken: pickSecretInput(bodyGhost.webhookToken, currentPayments?.gateways?.ghostspay?.webhookToken || '')
+                },
+                sunize: {
+                    ...bodySunize,
+                    apiKey: pickSecretInput(bodySunize.apiKey, currentPayments?.gateways?.sunize?.apiKey || ''),
+                    apiSecret: pickSecretInput(bodySunize.apiSecret, currentPayments?.gateways?.sunize?.apiSecret || ''),
+                    webhookToken: pickSecretInput(bodySunize.webhookToken, currentPayments?.gateways?.sunize?.webhookToken || '')
                 }
             }
         };
@@ -1002,11 +1048,16 @@ async function pixReconcile(req, res) {
     let blockedByAtivus = 0;
     const gatewaySummary = {
         ativushub: { checked: 0, confirmed: 0, pending: 0, failed: 0 },
-        ghostspay: { checked: 0, confirmed: 0, pending: 0, failed: 0 }
+        ghostspay: { checked: 0, confirmed: 0, pending: 0, failed: 0 },
+        sunize: { checked: 0, confirmed: 0, pending: 0, failed: 0 }
     };
 
     const runOne = async ({ txid, gateway: rowGateway, sessionId: sessionHint }) => {
-        const gateway = rowGateway === 'ghostspay' ? 'ghostspay' : 'ativushub';
+        const gateway = rowGateway === 'ghostspay'
+            ? 'ghostspay'
+            : rowGateway === 'sunize'
+                ? 'sunize'
+                : 'ativushub';
         checked += 1;
         gatewaySummary[gateway].checked += 1;
         try {
@@ -1068,6 +1119,43 @@ async function pixReconcile(req, res) {
                     0
                 );
                 commission = Math.max(0, Number((amount - fee).toFixed(2)));
+            } else if (gateway === 'sunize') {
+                ({ response, data } = await requestSunizeStatus(payments?.gateways?.sunize || {}, txid));
+                if (!response?.ok) {
+                    failed += 1;
+                    gatewaySummary[gateway].failed += 1;
+                    if (failedDetails.length < 8) {
+                        failedDetails.push({
+                            txid,
+                            gateway,
+                            status: response?.status || 0,
+                            detail: data?.error || data?.message || ''
+                        });
+                    }
+                    return;
+                }
+
+                status = getSunizeStatus(data);
+                utmifyStatus = mapSunizeStatusToUtmify(status);
+                isPaid = isSunizePaidStatus(status);
+                isRefunded = isSunizeRefundedStatus(status);
+                isRefused = isSunizeRefusedStatus(status);
+                isPending = isSunizePendingStatus(status);
+                changedAt =
+                    toIsoDate(getSunizeUpdatedAt(data)) ||
+                    toIsoDate(data?.paid_at) ||
+                    toIsoDate(data?.paidAt) ||
+                    new Date().toISOString();
+                sessionIdFallback = String(
+                    data?.external_id ||
+                    data?.externalId ||
+                    data?.metadata?.orderId ||
+                    sessionIdFallback ||
+                    ''
+                ).trim();
+                amount = getSunizeAmount(data);
+                fee = 0;
+                commission = amount;
             } else {
                 ({ response, data } = await requestAtivushubStatus(payments?.gateways?.ativushub || {}, txid));
                 if (!response?.ok) {
@@ -1151,7 +1239,9 @@ async function pixReconcile(req, res) {
                 pixCreatedAt:
                     asObject(leadData?.payload).pixCreatedAt ||
                     toIsoDate(data?.data_registro) ||
+                    toIsoDate(data?.created_at) ||
                     toIsoDate(data?.createdAt) ||
+                    toIsoDate(data?.data?.created_at) ||
                     toIsoDate(data?.data?.createdAt) ||
                     leadData?.created_at ||
                     undefined,

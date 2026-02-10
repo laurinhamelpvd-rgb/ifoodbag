@@ -1,6 +1,7 @@
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
 const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
+const { requestTransactionById: requestSunizeStatus } = require('../../lib/sunize-provider');
 const {
     normalizeGatewayId,
     resolveGatewayFromPayload
@@ -22,6 +23,14 @@ const {
     isGhostspayChargebackStatus,
     mapGhostspayStatusToUtmify
 } = require('../../lib/ghostspay-status');
+const {
+    getSunizeStatus,
+    getSunizeUpdatedAt,
+    isSunizePaidStatus,
+    isSunizeRefundedStatus,
+    isSunizeRefusedStatus,
+    mapSunizeStatusToUtmify
+} = require('../../lib/sunize-status');
 const {
     getLeadByPixTxid,
     getLeadBySessionId,
@@ -64,12 +73,16 @@ function mapUtmifyStatusToFrontend(status) {
     if (normalized === 'paid') return 'paid';
     if (normalized === 'refunded') return 'refunded';
     if (normalized === 'refused') return 'refused';
+    if (normalized === 'chargedback') return 'refused';
     return 'waiting_payment';
 }
 
 function mapGatewayStatusToFrontend(gateway, statusRaw) {
     if (gateway === 'ghostspay') {
         return mapUtmifyStatusToFrontend(mapGhostspayStatusToUtmify(statusRaw));
+    }
+    if (gateway === 'sunize') {
+        return mapUtmifyStatusToFrontend(mapSunizeStatusToUtmify(statusRaw));
     }
     return mapUtmifyStatusToFrontend(mapAtivusStatusToUtmify(statusRaw));
 }
@@ -124,12 +137,19 @@ function buildPatchFromGatewayStatus(leadData, txid, gateway, statusRaw, nextSta
 function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
     const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
     const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
+    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
     const requested = normalizeGatewayId(body.gateway || body.paymentGateway || body.provider || '');
     if (requested === 'ghostspay' && ghostspayEnabled) {
         return 'ghostspay';
     }
+    if (requested === 'sunize' && sunizeEnabled) {
+        return 'sunize';
+    }
     if (requested === 'ativushub' && !ativushubEnabled && ghostspayEnabled) {
         return 'ghostspay';
+    }
+    if (requested === 'ativushub' && !ativushubEnabled && sunizeEnabled) {
+        return 'sunize';
     }
 
     const payload = asObject(leadData?.payload);
@@ -137,8 +157,14 @@ function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
     if (fromLead === 'ghostspay' && ghostspayEnabled) {
         return 'ghostspay';
     }
+    if (fromLead === 'sunize' && sunizeEnabled) {
+        return 'sunize';
+    }
     if (!ativushubEnabled && ghostspayEnabled) {
         return 'ghostspay';
+    }
+    if (!ativushubEnabled && sunizeEnabled) {
+        return 'sunize';
     }
     return 'ativushub';
 }
@@ -249,6 +275,36 @@ module.exports = async (req, res) => {
             toIsoDate(getGhostspayUpdatedAt(data)) ||
             toIsoDate(data?.paidAt) ||
             toIsoDate(data?.data?.paidAt) ||
+            new Date().toISOString();
+    } else if (gateway === 'sunize') {
+        ({ response, data } = await requestSunizeStatus(gatewayConfig, txid));
+        if (!response?.ok) {
+            const status = Number(response?.status || 0);
+            res.status(status === 404 ? 200 : 502).json({
+                ok: status === 404,
+                status: leadStatus.status || 'waiting_payment',
+                statusRaw: leadStatus.statusRaw || '',
+                txid,
+                gateway,
+                source: 'database_fallback',
+                detail: data?.error || data?.message || ''
+            });
+            return;
+        }
+
+        statusRaw = getSunizeStatus(data);
+        const mapped = mapSunizeStatusToUtmify(statusRaw);
+        nextStatus = isSunizePaidStatus(statusRaw)
+            ? 'paid'
+            : isSunizeRefundedStatus(statusRaw)
+                ? 'refunded'
+                : isSunizeRefusedStatus(statusRaw)
+                    ? 'refused'
+                    : mapUtmifyStatusToFrontend(mapped);
+        changedAtIso =
+            toIsoDate(getSunizeUpdatedAt(data)) ||
+            toIsoDate(data?.paid_at) ||
+            toIsoDate(data?.paidAt) ||
             new Date().toISOString();
     } else {
         ({ response, data } = await requestAtivushubStatus(gatewayConfig, txid));

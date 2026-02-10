@@ -15,16 +15,31 @@ const {
     requestCreateTransaction: requestGhostspayCreate,
     resolvePostbackUrl: resolveGhostspayPostbackUrl
 } = require('../../lib/ghostspay-provider');
+const {
+    requestCreateTransaction: requestSunizeCreate
+} = require('../../lib/sunize-provider');
+const { getSunizeStatus } = require('../../lib/sunize-status');
 
 function resolveGateway(rawBody = {}, payments = {}) {
     const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
     const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
+    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
     const requested = normalizeGatewayId(rawBody.gateway || rawBody.paymentGateway || payments.activeGateway);
     if (requested === 'ghostspay') {
-        return ghostspayEnabled ? 'ghostspay' : 'ativushub';
+        if (ghostspayEnabled) return 'ghostspay';
+        if (sunizeEnabled) return 'sunize';
+        return 'ativushub';
+    }
+    if (requested === 'sunize') {
+        if (sunizeEnabled) return 'sunize';
+        if (ghostspayEnabled) return 'ghostspay';
+        return 'ativushub';
     }
     if (!ativushubEnabled && ghostspayEnabled) {
         return 'ghostspay';
+    }
+    if (!ativushubEnabled && sunizeEnabled) {
+        return 'sunize';
     }
     return 'ativushub';
 }
@@ -34,6 +49,27 @@ function hasGhostspayCredentials(config = {}) {
         String(config.basicAuthBase64 || '').trim() ||
         (String(config.secretKey || '').trim() && String(config.companyId || '').trim())
     );
+}
+
+function hasSunizeCredentials(config = {}) {
+    return Boolean(
+        String(config.apiKey || '').trim() &&
+        String(config.apiSecret || '').trim()
+    );
+}
+
+function toE164Phone(value = '') {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('55') && digits.length >= 12) {
+        return `+${digits}`;
+    }
+    return `+55${digits}`;
+}
+
+function resolveDocumentType(document = '') {
+    const digits = String(document || '').replace(/\D/g, '');
+    return digits.length > 11 ? 'CNPJ' : 'CPF';
 }
 
 function resolveGhostspayResponse(data = {}) {
@@ -74,6 +110,54 @@ function resolveGhostspayResponse(data = {}) {
 
     const status = String(data?.status || data?.data?.status || '').trim();
     return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status };
+}
+
+function resolveSunizeResponse(data = {}) {
+    const txid = String(
+        data?.id ||
+        data?.transaction_id ||
+        data?.transactionId ||
+        data?.data?.id ||
+        ''
+    ).trim();
+    const paymentCode = String(
+        data?.pix?.payload ||
+        data?.pix?.copyPaste ||
+        data?.pix?.copy_paste ||
+        data?.pixPayload ||
+        ''
+    ).trim();
+    const qrRaw = String(
+        data?.pix?.qrcode ||
+        data?.pix?.qrCode ||
+        data?.pix?.qr_code ||
+        data?.pix?.qrcodeBase64 ||
+        data?.pix?.qrCodeBase64 ||
+        data?.pix?.qr_code_base64 ||
+        ''
+    ).trim();
+    const qrUrl = String(
+        data?.pix?.qrcode_url ||
+        data?.pix?.qrCodeUrl ||
+        data?.pix?.qr_code_url ||
+        ''
+    ).trim();
+    const externalId = String(data?.external_id || data?.externalId || '').trim();
+    const status = getSunizeStatus(data);
+
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrUrl) {
+        paymentQrUrl = qrUrl;
+    } else if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+
+    return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status, externalId };
 }
 
 module.exports = async (req, res) => {
@@ -162,6 +246,7 @@ module.exports = async (req, res) => {
         let paymentCodeBase64 = '';
         let paymentQrUrl = '';
         let statusRaw = '';
+        let externalId = '';
 
         if (gateway === 'ghostspay') {
             if (!hasGhostspayCredentials(gatewayConfig)) {
@@ -230,6 +315,61 @@ module.exports = async (req, res) => {
             paymentCodeBase64 = ghostData.paymentCodeBase64;
             paymentQrUrl = ghostData.paymentQrUrl;
             statusRaw = ghostData.status;
+        } else if (gateway === 'sunize') {
+            if (!hasSunizeCredentials(gatewayConfig)) {
+                return res.status(500).json({ error: 'Credenciais Sunize nao configuradas.' });
+            }
+
+            const documentType = resolveDocumentType(cpf);
+            const phoneE164 = toE164Phone(phone);
+            const externalIdBase = upsellEnabled ? `${orderId}-upsell` : orderId;
+            externalId = `${externalIdBase}-${Date.now()}`;
+
+            const sunizeItems = items.map((item, index) => ({
+                id: `${shipping?.id || 'item'}-${index + 1}`,
+                title: String(item.title || 'Item'),
+                description: String(item.title || 'Item'),
+                price: Number(Number(item.unitPrice || 0).toFixed(2)),
+                quantity: Number(item.quantity || 1),
+                is_physical: false
+            }));
+
+            const sunizePayload = {
+                external_id: externalId,
+                total_amount: Number(totalAmount.toFixed(2)),
+                payment_method: 'PIX',
+                items: sunizeItems,
+                ip: extractIp(req),
+                customer: {
+                    name,
+                    email,
+                    phone: phoneE164,
+                    document_type: documentType,
+                    document: cpf
+                }
+            };
+
+            ({ response, data } = await requestSunizeCreate(gatewayConfig, sunizePayload));
+            if (!response?.ok) {
+                return res.status(response?.status || 502).json({
+                    error: 'Falha ao gerar o PIX.',
+                    detail: data
+                });
+            }
+            if (data?.hasError === true) {
+                return res.status(502).json({
+                    error: 'Falha ao gerar o PIX.',
+                    detail: data
+                });
+            }
+
+            const sunizeData = resolveSunizeResponse(data);
+            txid = sunizeData.txid;
+            paymentCode = sunizeData.paymentCode;
+            paymentCodeBase64 = sunizeData.paymentCodeBase64;
+            paymentQrUrl = sunizeData.paymentQrUrl;
+            statusRaw = sunizeData.status;
+            externalId = sunizeData.externalId || externalId;
         } else {
             if (!String(gatewayConfig.apiKeyBase64 || '').trim()) {
                 return res.status(500).json({ error: 'API Key da AtivusHUB nao configurada.' });
@@ -323,6 +463,7 @@ module.exports = async (req, res) => {
             pixCreatedAt,
             pixStatusChangedAt: pixCreatedAt,
             pixStatus: statusRaw || 'waiting_payment',
+            pixExternalId: externalId || undefined,
             upsell: upsellEnabled ? {
                 enabled: true,
                 kind: String(upsell?.kind || 'frete_1dia'),
@@ -340,7 +481,8 @@ module.exports = async (req, res) => {
             paymentQrUrl,
             status: statusRaw || '',
             amount: totalAmount,
-            gateway
+            gateway,
+            externalId
         };
         res.status(200).json(responsePayload);
 

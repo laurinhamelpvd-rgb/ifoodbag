@@ -31,6 +31,17 @@ const {
     isGhostspayChargebackStatus,
     mapGhostspayStatusToUtmify
 } = require('../../lib/ghostspay-status');
+const {
+    getSunizeTxid,
+    getSunizeExternalId,
+    getSunizeStatus,
+    getSunizeUpdatedAt,
+    getSunizeAmount,
+    isSunizePaidStatus,
+    isSunizeRefundedStatus,
+    isSunizeRefusedStatus,
+    mapSunizeStatusToUtmify
+} = require('../../lib/sunize-status');
 
 function normalizeDate(value) {
     if (!value && value !== 0) return null;
@@ -139,6 +150,14 @@ function looksLikeGhostspayWebhook(payload = {}) {
     return hasEvent && hasObject && hasStatus;
 }
 
+function looksLikeSunizeWebhook(payload = {}) {
+    const hasTx = !!String(payload?.id || payload?.transaction_id || payload?.transactionId || '').trim();
+    const hasStatus = !!String(payload?.status || '').trim();
+    const hasPaymentMethod = String(payload?.payment_method || payload?.paymentMethod || '').trim().toUpperCase() === 'PIX';
+    const hasExternalId = !!String(payload?.external_id || payload?.externalId || '').trim();
+    return hasTx && hasStatus && (hasPaymentMethod || hasExternalId);
+}
+
 function normalizeMoneyToBrl(value) {
     const amount = Number(value || 0);
     if (!Number.isFinite(amount)) return 0;
@@ -149,6 +168,82 @@ function normalizeMoneyToBrl(value) {
 }
 
 function extractGatewayEvent(gateway, body = {}) {
+    if (gateway === 'sunize') {
+        const txid = getSunizeTxid(body);
+        const statusRaw = getSunizeStatus(body);
+        const utmifyStatus = mapSunizeStatusToUtmify(statusRaw);
+        const isPaid = isSunizePaidStatus(statusRaw);
+        const isRefunded = isSunizeRefundedStatus(statusRaw);
+        const isRefused = isSunizeRefusedStatus(statusRaw);
+        const amount = getSunizeAmount(body);
+        const metadata = asObject(body?.metadata);
+        const customer = asObject(body?.customer);
+        const sessionOrderId = String(
+            getSunizeExternalId(body) ||
+            metadata?.orderId ||
+            metadata?.externalreference ||
+            ''
+        ).trim();
+        const statusChangedAt =
+            normalizeDate(getSunizeUpdatedAt(body)) ||
+            normalizeDate(body?.paid_at) ||
+            normalizeDate(body?.paidAt) ||
+            new Date().toISOString();
+        const pixCreatedAtFromGateway =
+            normalizeDate(body?.created_at) ||
+            normalizeDate(body?.createdAt) ||
+            null;
+        const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
+
+        return {
+            gateway,
+            txid,
+            statusRaw,
+            utmifyStatus,
+            isPaid,
+            isRefunded,
+            isRefused,
+            amount,
+            gatewayFee: 0,
+            userCommission: amount,
+            sessionOrderId,
+            statusChangedAt,
+            pixCreatedAtFromGateway,
+            lastEvent,
+            webhookEventId: '',
+            fallbackIdentity: {
+                cpf: String(customer?.document || '').trim(),
+                email: String(customer?.email || '').trim(),
+                phone: String(customer?.phone || '').trim()
+            },
+            fallbackPersonal: {
+                name: String(customer?.name || '').trim(),
+                email: String(customer?.email || '').trim(),
+                cpf: String(customer?.document || '').trim(),
+                phone: String(customer?.phone || '').trim()
+            },
+            fallbackAddress: {
+                street: '',
+                neighborhood: '',
+                city: '',
+                state: '',
+                cep: ''
+            },
+            fallbackUtm: {
+                utm_source: String(metadata?.utm_source || '').trim(),
+                utm_medium: String(metadata?.utm_medium || '').trim(),
+                utm_campaign: String(metadata?.utm_campaign || '').trim(),
+                utm_term: String(metadata?.utm_term || '').trim(),
+                utm_content: String(metadata?.utm_content || '').trim(),
+                src: String(metadata?.src || '').trim(),
+                sck: String(metadata?.sck || '').trim(),
+                fbclid: String(metadata?.fbclid || '').trim(),
+                gclid: String(metadata?.gclid || '').trim(),
+                ttclid: String(metadata?.ttclid || '').trim()
+            }
+        };
+    }
+
     if (gateway === 'ghostspay') {
         const txid = getGhostspayTxid(body);
         const statusRaw = getGhostspayStatus(body);
@@ -299,11 +394,23 @@ function extractGatewayEvent(gateway, body = {}) {
 }
 
 function resolveWebhookGateway(query = {}, body = {}, payments = {}) {
+    const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
+    const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
+    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
     const requested = normalizeGatewayId(query.gateway || query.provider || body.gateway || body.provider);
-    if (requested === 'ghostspay' && payments?.gateways?.ghostspay?.enabled) return 'ghostspay';
-    if (looksLikeGhostspayWebhook(body) && payments?.gateways?.ghostspay?.enabled) return 'ghostspay';
+    if (requested === 'sunize' && sunizeEnabled) return 'sunize';
+    if (requested === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
+    if (looksLikeSunizeWebhook(body) && sunizeEnabled) return 'sunize';
+    if (looksLikeGhostspayWebhook(body) && ghostspayEnabled) return 'ghostspay';
     if (looksLikeAtivusWebhook(body)) return 'ativushub';
-    return normalizeGatewayId(payments.activeGateway || 'ativushub');
+
+    const active = normalizeGatewayId(payments.activeGateway || 'ativushub');
+    if (active === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
+    if (active === 'sunize' && sunizeEnabled) return 'sunize';
+    if (active === 'ativushub' && ativushubEnabled) return 'ativushub';
+    if (ghostspayEnabled) return 'ghostspay';
+    if (sunizeEnabled) return 'sunize';
+    return 'ativushub';
 }
 
 module.exports = async (req, res) => {

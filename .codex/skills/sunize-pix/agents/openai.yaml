@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sunize PIX API"
+  short_description: "Integracao PIX Sunize para sites SaaS e checkout"
+  default_prompt: "Use $sunize-pix para implementar, corrigir ou auditar integracoes da API PIX da Sunize."
