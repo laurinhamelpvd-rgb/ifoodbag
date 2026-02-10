@@ -178,7 +178,7 @@ function setupGlobalBackRedirect(page) {
     if (window.__ifoodBackRedirectInit) return;
     window.__ifoodBackRedirectInit = true;
 
-    const targetUrl = buildBackRedirectUrl();
+    const targetUrl = buildBackRedirectUrl(page);
     let shownOffer = false;
     let orderBumpBackHandled = false;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -253,9 +253,15 @@ function setupGlobalBackRedirect(page) {
             return;
         }
     };
+    setTimeout(reinforceGuards, 250);
+    setTimeout(reinforceGuards, 1000);
     window.addEventListener('pointerdown', reinforceGuards, { passive: true, once: true });
     window.addEventListener('touchstart', reinforceGuards, { passive: true, once: true });
     window.addEventListener('keydown', reinforceGuards, { once: true });
+    window.addEventListener('focus', reinforceGuards, { passive: true });
+    window.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reinforceGuards();
+    });
     window.addEventListener('pageshow', (event) => {
         if (event.persisted) {
             pushHistoryGuards();
@@ -1494,9 +1500,34 @@ function initPix() {
 
 function buildBackRedirectUrl() {
     const params = new URLSearchParams(window.location.search || '');
-    params.set('dc', '1');
-    const query = params.toString();
-    return `checkout.html${query ? `?${query}` : ''}`;
+    const directCheckoutUrl = () => {
+        params.set('dc', '1');
+        const query = params.toString();
+        return `checkout.html${query ? `?${query}` : ''}`;
+    };
+
+    const page = document.body?.dataset?.page || '';
+    const shipping = loadShipping();
+    const pix = loadPix();
+
+    switch (page) {
+        case 'home':
+        case 'quiz':
+        case 'personal':
+        case 'cep':
+        case 'processing':
+        case 'success':
+            return directCheckoutUrl();
+        case 'checkout':
+            if (shipping) return 'orderbump.html';
+            return directCheckoutUrl();
+        case 'orderbump':
+            if (pix) return 'pix.html';
+            if (shipping) return 'orderbump.html';
+            return directCheckoutUrl();
+        default:
+            return directCheckoutUrl();
+    }
 }
 
 function initAdmin() {
