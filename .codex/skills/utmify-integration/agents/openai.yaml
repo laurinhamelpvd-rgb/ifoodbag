@@ -1,0 +1,4 @@
+interface:
+  display_name: "UTMify Integration"
+  short_description: "Integrar UTMify com checkout, PIX e Pixel Meta"
+  default_prompt: "Use $utmify-integration para integrar UTMify no meu checkout com Pixel Meta."

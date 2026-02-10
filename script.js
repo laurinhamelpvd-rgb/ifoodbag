@@ -259,9 +259,10 @@ function setupGlobalBackRedirect(page) {
         }
     };
 
-    const handleBackAttempt = () => {
-        const currentState = history.state || {};
-        if (!currentState.ifb || currentState.token !== guardToken) return;
+    const handleBackAttempt = (event) => {
+        const eventState = event && typeof event === 'object' ? event.state : null;
+        const foreignGuard = eventState && eventState.ifb && eventState.token && eventState.token !== guardToken;
+        if (foreignGuard) return;
         const now = Date.now();
         if ((now - backAttemptAt) < 120) return;
         backAttemptAt = now;
@@ -2055,7 +2056,7 @@ function initAdmin() {
         rows.forEach((row) => {
             const tr = document.createElement('tr');
             const ev = String(row.evento || '').toLowerCase().trim();
-            const isPaid = ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
+            const isPaid = row.is_paid === true || ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
             const statusLabel = isPaid ? 'pagamento_confirmado' : (row.status_funil || row.evento || '-');
             tr.innerHTML = `
                 <td>${row.nome || '-'}</td>
@@ -2066,7 +2067,7 @@ function initAdmin() {
                 <td><span class="status-pill ${isPaid ? 'status-pill--paid' : 'status-pill--neutral'}">${statusLabel}</span></td>
                 <td>${row.frete || '-'}</td>
                 <td>${row.valor_total ? formatCurrency(row.valor_total) : '-'}</td>
-                <td>${row.updated_at ? new Date(row.updated_at).toLocaleString('pt-BR') : '-'}</td>
+                <td>${formatDateTime(row.event_time || row.updated_at)}</td>
             `;
             leadsBody.appendChild(tr);
         });
@@ -2102,24 +2103,23 @@ function initAdmin() {
             if (pixTxid && pixTxid !== '-') metrics.pix += 1;
             if (frete && frete !== '-') metrics.frete += 1;
             if (cep && cep !== '-') metrics.cep += 1;
-            if (ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid') metrics.paid += 1;
-            if (!metrics.lastUpdated && row.updated_at) metrics.lastUpdated = row.updated_at;
+            const isPaid = row.is_paid === true || ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
+            if (isPaid) metrics.paid += 1;
+            if (!metrics.lastUpdated && (row.event_time || row.updated_at)) metrics.lastUpdated = row.event_time || row.updated_at;
         });
         }
 
         if (metricTotal) metricTotal.textContent = String(metrics.total);
-        if (metricPix) metricPix.textContent = String(metrics.paid || metrics.pix);
+        if (metricPix) metricPix.textContent = String(metrics.paid);
         if (metricFrete) metricFrete.textContent = String(metrics.frete);
         if (metricCep) metricCep.textContent = String(metrics.cep);
         if (metricUpdated) {
-            metricUpdated.textContent = metrics.lastUpdated
-                ? new Date(metrics.lastUpdated).toLocaleString('pt-BR')
-                : '-';
+            metricUpdated.textContent = formatDateTime(metrics.lastUpdated);
         }
         if (metricBase) metricBase.textContent = `Base: ${metrics.total}`;
 
         const total = metrics.total || 0;
-        const pctPix = total ? Math.round((((metrics.paid || 0) || metrics.pix) / total) * 100) : 0;
+        const pctPix = total ? Math.round((metrics.paid / total) * 100) : 0;
         const pctFrete = total ? Math.round((metrics.frete / total) * 100) : 0;
         const pctCep = total ? Math.round((metrics.cep / total) * 100) : 0;
 
@@ -2580,6 +2580,15 @@ function formatCurrency(value) {
         style: 'currency',
         currency: 'BRL'
     }).format(value);
+}
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleString('pt-BR');
+    }
+    return String(value || '').trim() || '-';
 }
 
 function roundMoney(value) {

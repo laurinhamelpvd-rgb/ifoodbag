@@ -1,0 +1,4 @@
+interface:
+  display_name: "AtivusHUB PIX"
+  short_description: "Integrar AtivusHUB PIX com webhook e tracking"
+  default_prompt: "Use $ativushub-pix para integrar checkout PIX AtivusHUB com webhook, Pixel e UTMfy."

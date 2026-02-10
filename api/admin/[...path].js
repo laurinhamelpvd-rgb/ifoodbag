@@ -25,6 +25,189 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.en
 const pick = (...values) => values.find((value) => value !== undefined && value !== null && value !== '');
 const clamp = (value, min, max) => Math.min(Math.max(Number(value) || 0, min), max);
 
+function asObject(input) {
+    if (!input) return {};
+    if (typeof input === 'object' && !Array.isArray(input)) return input;
+    if (typeof input === 'string') {
+        try {
+            const parsed = JSON.parse(input);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    }
+    return {};
+}
+
+function toIsoDate(value) {
+    if (!value && value !== 0) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+    if (typeof value === 'number') {
+        const ms = value > 1e12 ? value : value * 1000;
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    }
+    const str = String(value || '').trim();
+    if (!str) return null;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
+        const d = new Date(str.replace(' ', 'T'));
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+    }
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function mergeLeadPayload(basePayload, patch) {
+    return {
+        ...asObject(basePayload),
+        ...Object.fromEntries(
+            Object.entries(asObject(patch)).filter(([, value]) => value !== undefined)
+        )
+    };
+}
+
+function normalizeStatusText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_ -]/g, '')
+        .trim();
+}
+
+function isPaidFromStatus(status) {
+    const s = normalizeStatusText(status);
+    if (!s) return false;
+    if (s.includes('aguardando') || s.includes('waiting') || s.includes('pending')) return false;
+    if (s.includes('refund') || s.includes('estorno')) return false;
+    if (s.includes('cancel') || s.includes('failed') || s.includes('recus')) return false;
+    return (
+        s.includes('paid') ||
+        s.includes('pago') ||
+        s.includes('approved') ||
+        s.includes('aprovad') ||
+        s.includes('completed') ||
+        s.includes('confirm')
+    );
+}
+
+function isLeadPaid(row, payload) {
+    if (String(row?.last_event || '').toLowerCase().trim() === 'pix_confirmed') return true;
+    if (toIsoDate(payload?.pixPaidAt)) return true;
+    if (toIsoDate(payload?.approvedDate)) return true;
+    if (isPaidFromStatus(payload?.pixStatus)) return true;
+    if (isPaidFromStatus(payload?.status)) return true;
+    if (isPaidFromStatus(payload?.status_transaction)) return true;
+    if (isPaidFromStatus(payload?.situacao)) return true;
+    if (isPaidFromStatus(payload?.payload?.status)) return true;
+    if (isPaidFromStatus(payload?.payload?.situacao)) return true;
+    return false;
+}
+
+function resolveEventTime(row, payload) {
+    if (isLeadPaid(row, payload)) {
+        return (
+            toIsoDate(payload.pixPaidAt) ||
+            toIsoDate(payload.approvedDate) ||
+            toIsoDate(payload.data_transacao) ||
+            toIsoDate(payload.pixStatusChangedAt) ||
+            toIsoDate(row?.updated_at)
+        );
+    }
+
+    const eventName = String(row?.last_event || '').toLowerCase().trim();
+    if (eventName === 'pix_confirmed') {
+        return (
+            toIsoDate(payload.pixPaidAt) ||
+            toIsoDate(payload.approvedDate) ||
+            toIsoDate(payload.data_transacao) ||
+            toIsoDate(payload.pixStatusChangedAt) ||
+            toIsoDate(row?.updated_at)
+        );
+    }
+    if (eventName === 'pix_refunded') {
+        return (
+            toIsoDate(payload.pixRefundedAt) ||
+            toIsoDate(payload.refundedAt) ||
+            toIsoDate(payload.data_transacao) ||
+            toIsoDate(payload.pixStatusChangedAt) ||
+            toIsoDate(row?.updated_at)
+        );
+    }
+    if (eventName === 'pix_refused' || eventName === 'pix_pending') {
+        return (
+            toIsoDate(payload.pixStatusChangedAt) ||
+            toIsoDate(payload.data_transacao) ||
+            toIsoDate(payload.data_registro) ||
+            toIsoDate(row?.updated_at)
+        );
+    }
+    if (eventName === 'pix_created') {
+        return (
+            toIsoDate(payload.pixCreatedAt) ||
+            toIsoDate(payload.createdAt) ||
+            toIsoDate(row?.created_at) ||
+            toIsoDate(row?.updated_at)
+        );
+    }
+    return (
+        toIsoDate(payload.pixStatusChangedAt) ||
+        toIsoDate(payload.pixCreatedAt) ||
+        toIsoDate(row?.updated_at) ||
+        toIsoDate(row?.created_at)
+    );
+}
+
+function mapLeadReadable(row) {
+    const payload = asObject(row?.payload);
+    const isPaid = isLeadPaid(row, payload);
+    const statusFunil = isPaid
+        ? 'pagamento_confirmado'
+        : row?.last_event === 'pix_refunded'
+            ? 'pix_estornado'
+            : row?.last_event === 'pix_refused'
+                ? 'pix_recusado'
+                : row?.pix_txid
+                    ? 'pix_gerado'
+                    : row?.shipping_id
+                        ? 'frete_selecionado'
+                        : row?.cep
+                            ? 'cep_confirmado'
+                            : row?.email || row?.phone
+                                ? 'dados_pessoais'
+                                : 'inicio';
+    const evento = isPaid ? 'pix_confirmed' : (row?.last_event || '-');
+
+    return {
+        session_id: row?.session_id || '',
+        nome: row?.name || '-',
+        cpf: row?.cpf || '-',
+        email: row?.email || '-',
+        telefone: row?.phone || '-',
+        etapa: row?.stage || '-',
+        evento,
+        cep: row?.cep || '-',
+        endereco: [row?.address_line, row?.number, row?.neighborhood, row?.city, row?.state]
+            .filter(Boolean)
+            .join(', '),
+        frete: row?.shipping_name || '-',
+        valor_frete: row?.shipping_price ?? null,
+        seguro_bag: row?.bump_selected ? 'sim' : 'nao',
+        valor_seguro: row?.bump_price ?? null,
+        pix_txid: row?.pix_txid || '-',
+        valor_total: row?.pix_amount ?? null,
+        utm_source: row?.utm_source || '-',
+        utm_campaign: row?.utm_campaign || '-',
+        fbclid: row?.fbclid || '-',
+        gclid: row?.gclid || '-',
+        status_funil: statusFunil,
+        is_paid: isPaid,
+        updated_at: row?.updated_at || null,
+        created_at: row?.created_at || null,
+        event_time: resolveEventTime(row, payload)
+    };
+}
+
 async function listLeadTxidsForReconcile({ maxTx = 50000, pageSize = 500, includeConfirmed = true } = {}) {
     const txids = [];
     let offset = 0;
@@ -98,19 +281,19 @@ async function getLeads(req, res) {
         return;
     }
 
-    const url = new URL(`${SUPABASE_URL}/rest/v1/leads_readable`);
+    const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const query = String(req.query.q || '').trim();
 
-    url.searchParams.set('select', '*');
+    url.searchParams.set('select', 'session_id,name,cpf,email,phone,stage,last_event,cep,address_line,number,neighborhood,city,state,shipping_name,shipping_price,bump_selected,bump_price,pix_txid,pix_amount,utm_source,utm_campaign,fbclid,gclid,payload,updated_at,created_at');
     url.searchParams.set('order', 'updated_at.desc');
     url.searchParams.set('limit', String(limit));
     url.searchParams.set('offset', String(offset));
 
     if (query) {
         const ilike = `%${query.replace(/%/g, '')}%`;
-        url.searchParams.set('or', `nome.ilike.${ilike},email.ilike.${ilike},telefone.ilike.${ilike},cpf.ilike.${ilike}`);
+        url.searchParams.set('or', `name.ilike.${ilike},email.ilike.${ilike},phone.ilike.${ilike},cpf.ilike.${ilike}`);
     }
 
     const response = await fetchFn(url.toString(), {
@@ -127,7 +310,8 @@ async function getLeads(req, res) {
         return;
     }
 
-    const data = await response.json().catch(() => []);
+    const rows = await response.json().catch(() => []);
+    const data = Array.isArray(rows) ? rows.map(mapLeadReadable) : [];
 
     const withSummary = String(req.query.summary || '0') === '1';
     if (!withSummary) {
@@ -153,15 +337,15 @@ async function getLeads(req, res) {
     let done = false;
 
     while (!done && summaryOffset < maxSummaryRows) {
-        const u = new URL(`${SUPABASE_URL}/rest/v1/leads_readable`);
+        const u = new URL(`${SUPABASE_URL}/rest/v1/leads`);
         const take = Math.min(pageSize, maxSummaryRows - summaryOffset);
-        u.searchParams.set('select', 'cep,frete,pix_txid,evento,updated_at');
+        u.searchParams.set('select', 'cep,shipping_name,pix_txid,last_event,updated_at,created_at,payload');
         u.searchParams.set('order', 'updated_at.desc');
         u.searchParams.set('limit', String(take));
         u.searchParams.set('offset', String(summaryOffset));
         if (query) {
             const ilike = `%${query.replace(/%/g, '')}%`;
-            u.searchParams.set('or', `nome.ilike.${ilike},email.ilike.${ilike},telefone.ilike.${ilike},cpf.ilike.${ilike}`);
+            u.searchParams.set('or', `name.ilike.${ilike},email.ilike.${ilike},phone.ilike.${ilike},cpf.ilike.${ilike}`);
         }
 
         const r = await fetchFn(u.toString(), {
@@ -176,18 +360,24 @@ async function getLeads(req, res) {
         if (!Array.isArray(rows) || rows.length === 0) break;
 
         rows.forEach((row) => {
+            const mapped = mapLeadReadable(row);
             summary.total += 1;
             if (String(row?.cep || '').trim() && String(row?.cep || '').trim() !== '-') summary.cep += 1;
-            if (String(row?.frete || '').trim() && String(row?.frete || '').trim() !== '-') summary.frete += 1;
+            if (String(row?.shipping_name || '').trim() && String(row?.shipping_name || '').trim() !== '-') summary.frete += 1;
             if (String(row?.pix_txid || '').trim() && String(row?.pix_txid || '').trim() !== '-') summary.pix += 1;
 
-            const ev = String(row?.evento || '').toLowerCase().trim();
-            if (ev === 'pix_confirmed') summary.paid += 1;
+            const ev = String(mapped?.evento || '').toLowerCase().trim();
+            if (mapped?.is_paid || ev === 'pix_confirmed') summary.paid += 1;
             else if (ev === 'pix_refunded') summary.refunded += 1;
             else if (ev === 'pix_refused') summary.refused += 1;
             else if (ev === 'pix_pending' || ev === 'pix_created') summary.pending += 1;
 
-            if (!summary.lastUpdated && row?.updated_at) summary.lastUpdated = row.updated_at;
+            const eventTime = mapped?.event_time || row?.updated_at || null;
+            const currentTs = summary.lastUpdated ? Date.parse(summary.lastUpdated) : 0;
+            const rowTs = eventTime ? Date.parse(eventTime) : 0;
+            if (!summary.lastUpdated || (rowTs && rowTs > currentTs)) {
+                summary.lastUpdated = eventTime;
+            }
         });
 
         summaryOffset += rows.length;
@@ -593,7 +783,6 @@ async function pixReconcile(req, res) {
                 else if (utmifyStatus === 'waiting_payment') pending += 1;
                 else failed += 1;
                 const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-                let up = await updateLeadByPixTxid(txid, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
                 const sessionIdFallback = String(
                     data?.externalreference ||
                     data?.external_reference ||
@@ -601,13 +790,73 @@ async function pixReconcile(req, res) {
                     data?.orderId ||
                     ''
                 ).trim();
+                let lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+                let leadData = lead?.ok ? lead.data : null;
+                if (!leadData && sessionIdFallback) {
+                    lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
+                    leadData = lead?.ok ? lead.data : null;
+                }
+                const payloadPatch = mergeLeadPayload(leadData?.payload, {
+                    pixTxid: txid,
+                    pixStatus: status || null,
+                    pixStatusChangedAt:
+                        toIsoDate(data?.data_transacao) ||
+                        toIsoDate(data?.data_registro) ||
+                        new Date().toISOString(),
+                    pixCreatedAt:
+                        asObject(leadData?.payload).pixCreatedAt ||
+                        toIsoDate(data?.data_registro) ||
+                        leadData?.created_at ||
+                        undefined,
+                    pixPaidAt: isPaid
+                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                        : undefined,
+                    pixRefundedAt: isRefunded
+                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                        : undefined,
+                    pixRefusedAt: isRefused
+                        ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                        : undefined
+                });
+                let up = await updateLeadByPixTxid(txid, {
+                    last_event: lastEvent,
+                    stage: 'pix',
+                    payload: payloadPatch
+                }).catch(() => ({ ok: false, count: 0 }));
                 if ((!up?.ok || Number(up?.count || 0) === 0) && sessionIdFallback) {
-                    const bySession = await updateLeadBySessionId(sessionIdFallback, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+                    const bySessionLead = leadData || (await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null })))?.data;
+                    const bySessionPayload = mergeLeadPayload(bySessionLead?.payload, {
+                        pixTxid: txid,
+                        pixStatus: status || null,
+                        pixStatusChangedAt:
+                            toIsoDate(data?.data_transacao) ||
+                            toIsoDate(data?.data_registro) ||
+                            new Date().toISOString(),
+                        pixCreatedAt:
+                            asObject(bySessionLead?.payload).pixCreatedAt ||
+                            toIsoDate(data?.data_registro) ||
+                            bySessionLead?.created_at ||
+                            undefined,
+                        pixPaidAt: isPaid
+                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                            : undefined,
+                        pixRefundedAt: isRefunded
+                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                            : undefined,
+                        pixRefusedAt: isRefused
+                            ? (toIsoDate(data?.data_transacao) || toIsoDate(data?.data_registro) || new Date().toISOString())
+                            : undefined
+                    });
+                    const bySession = await updateLeadBySessionId(sessionIdFallback, {
+                        last_event: lastEvent,
+                        stage: 'pix',
+                        payload: bySessionPayload
+                    }).catch(() => ({ ok: false, count: 0 }));
                     if (bySession?.ok) up = bySession;
                 }
 
-                let lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
-                let leadData = lead?.ok ? lead.data : null;
+                lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+                leadData = lead?.ok ? lead.data : null;
                 if (!leadData && sessionIdFallback) {
                     lead = await getLeadBySessionId(sessionIdFallback).catch(() => ({ ok: false, data: null }));
                     leadData = lead?.ok ? lead.data : null;
@@ -666,9 +915,9 @@ async function pixReconcile(req, res) {
                             sck: leadUtm.sck
                         } : leadUtm,
                         payload: data,
-                        createdAt: leadData?.created_at,
-                        approvedDate: isPaid ? data?.data_transacao || data?.data_registro || null : null,
-                        refundedAt: isRefunded ? data?.data_transacao || data?.data_registro || null : null,
+                        createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at,
+                        approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || data?.data_transacao || data?.data_registro || null) : null,
+                        refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || data?.data_transacao || data?.data_registro || null) : null,
                         gatewayFeeInCents: Math.round(gatewayFee * 100),
                         userCommissionInCents: Math.round(userCommission * 100),
                         totalPriceInCents: Math.round(amount * 100)

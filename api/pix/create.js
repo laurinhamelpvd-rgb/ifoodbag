@@ -172,13 +172,17 @@ module.exports = async (req, res) => {
             });
         }
 
+        const pixCreatedAt = new Date().toISOString();
+
         // Do not block checkout flow on database write.
         upsertLead({
             ...(rawBody || {}),
             event: 'pix_created',
             stage: 'pix',
             pixTxid: data.idTransaction || data.idtransaction || '',
-            pixAmount: totalAmount
+            pixAmount: totalAmount,
+            pixCreatedAt,
+            pixStatusChangedAt: pixCreatedAt
         }, req).catch(() => null);
 
         const txid = data.idTransaction || data.idtransaction || '';

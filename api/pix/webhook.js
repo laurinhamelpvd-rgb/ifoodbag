@@ -12,6 +12,38 @@ const {
     isAtivusRefusedStatus
 } = require('../../lib/ativus-status');
 
+function normalizeAtivusDate(value) {
+    if (!value && value !== 0) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+    if (typeof value === 'number') {
+        const ms = value > 1e12 ? value : value * 1000;
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    }
+    const str = String(value || '').trim();
+    if (!str) return null;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
+        // Ativus commonly returns "YYYY-MM-DD HH:mm:ss" without timezone.
+        const d = new Date(str.replace(' ', 'T'));
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+    }
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function asObject(input) {
+    return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+}
+
+function mergeLeadPayload(basePayload, patch) {
+    return {
+        ...asObject(basePayload),
+        ...Object.fromEntries(
+            Object.entries(asObject(patch)).filter(([, value]) => value !== undefined)
+        )
+    };
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.status(405).json({ status: 'method_not_allowed' });
@@ -73,23 +105,79 @@ module.exports = async (req, res) => {
         body?.orderId ||
         ''
     ).trim();
+    const statusChangedAt =
+        normalizeAtivusDate(body?.data_transacao) ||
+        normalizeAtivusDate(body?.data_registro) ||
+        normalizeAtivusDate(body?.dt_atualizacao) ||
+        new Date().toISOString();
+    const pixCreatedAtFromGateway =
+        normalizeAtivusDate(body?.data_registro) ||
+        normalizeAtivusDate(body?.data_transacao) ||
+        null;
+    const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
 
     let leadData = null;
     if (txid) {
-        const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-        const upByTx = await updateLeadByPixTxid(txid, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
-        if ((!upByTx?.ok || Number(upByTx?.count || 0) === 0) && sessionOrderId) {
-            await updateLeadBySessionId(sessionOrderId, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
-        }
         const lead = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
         leadData = lead?.ok ? lead.data : null;
         if (!leadData && sessionOrderId) {
-            const bySession = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
-            leadData = bySession?.ok ? bySession.data : null;
+            const bySessionBefore = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
+            leadData = bySessionBefore?.ok ? bySessionBefore.data : null;
+        }
+
+        const payloadPatch = mergeLeadPayload(leadData?.payload, {
+            pixTxid: txid,
+            pixStatus: statusRaw || null,
+            pixStatusChangedAt: statusChangedAt,
+            pixCreatedAt: asObject(leadData?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadData?.created_at || undefined,
+            pixPaidAt: isPaid ? statusChangedAt : undefined,
+            pixRefundedAt: isRefunded ? statusChangedAt : undefined,
+            pixRefusedAt: isRefused ? statusChangedAt : undefined
+        });
+        const upByTx = await updateLeadByPixTxid(txid, {
+            last_event: lastEvent,
+            stage: 'pix',
+            payload: payloadPatch
+        }).catch(() => ({ ok: false, count: 0 }));
+        if ((!upByTx?.ok || Number(upByTx?.count || 0) === 0) && sessionOrderId) {
+            const bySessionBefore = leadData || (await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null })))?.data;
+            const sessionPayloadPatch = mergeLeadPayload(bySessionBefore?.payload, {
+                pixTxid: txid,
+                pixStatus: statusRaw || null,
+                pixStatusChangedAt: statusChangedAt,
+                pixCreatedAt: asObject(bySessionBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || bySessionBefore?.created_at || undefined,
+                pixPaidAt: isPaid ? statusChangedAt : undefined,
+                pixRefundedAt: isRefunded ? statusChangedAt : undefined,
+                pixRefusedAt: isRefused ? statusChangedAt : undefined
+            });
+            await updateLeadBySessionId(sessionOrderId, {
+                last_event: lastEvent,
+                stage: 'pix',
+                payload: sessionPayloadPatch
+            }).catch(() => ({ ok: false, count: 0 }));
+        }
+        const refreshed = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
+        leadData = refreshed?.ok ? refreshed.data : null;
+        if (!leadData && sessionOrderId) {
+            const bySessionAfter = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
+            leadData = bySessionAfter?.ok ? bySessionAfter.data : null;
         }
     } else if (sessionOrderId) {
-        const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-        await updateLeadBySessionId(sessionOrderId, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+        const bySessionBefore = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
+        const leadBefore = bySessionBefore?.ok ? bySessionBefore.data : null;
+        const payloadPatch = mergeLeadPayload(leadBefore?.payload, {
+            pixStatus: statusRaw || null,
+            pixStatusChangedAt: statusChangedAt,
+            pixCreatedAt: asObject(leadBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadBefore?.created_at || undefined,
+            pixPaidAt: isPaid ? statusChangedAt : undefined,
+            pixRefundedAt: isRefunded ? statusChangedAt : undefined,
+            pixRefusedAt: isRefused ? statusChangedAt : undefined
+        });
+        await updateLeadBySessionId(sessionOrderId, {
+            last_event: lastEvent,
+            stage: 'pix',
+            payload: payloadPatch
+        }).catch(() => ({ ok: false, count: 0 }));
         const bySession = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
         leadData = bySession?.ok ? bySession.data : null;
     }
@@ -102,8 +190,20 @@ module.exports = async (req, res) => {
         }).catch(() => ({ ok: false, data: null }));
         if (byIdentity?.ok && byIdentity?.data) {
             leadData = byIdentity.data;
-            const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-            await updateLeadBySessionId(leadData.session_id, { last_event: lastEvent, stage: 'pix' }).catch(() => ({ ok: false, count: 0 }));
+            const payloadPatch = mergeLeadPayload(leadData?.payload, {
+                pixTxid: txid || asObject(leadData?.payload).pixTxid || undefined,
+                pixStatus: statusRaw || null,
+                pixStatusChangedAt: statusChangedAt,
+                pixCreatedAt: asObject(leadData?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadData?.created_at || undefined,
+                pixPaidAt: isPaid ? statusChangedAt : undefined,
+                pixRefundedAt: isRefunded ? statusChangedAt : undefined,
+                pixRefusedAt: isRefused ? statusChangedAt : undefined
+            });
+            await updateLeadBySessionId(leadData.session_id, {
+                last_event: lastEvent,
+                stage: 'pix',
+                payload: payloadPatch
+            }).catch(() => ({ ok: false, count: 0 }));
         }
     }
 
@@ -173,9 +273,9 @@ module.exports = async (req, res) => {
             payload: body,
             client_ip: clientIp,
             user_agent: userAgent,
-            createdAt: leadData?.created_at || body?.data_registro || body?.data_transacao || Date.now(),
-            approvedDate: isPaid ? (body?.data_registro || body?.data_transacao || Date.now()) : null,
-            refundedAt: isRefunded ? (body?.data_registro || body?.data_transacao || Date.now()) : null,
+            createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at || body?.data_registro || body?.data_transacao || Date.now(),
+            approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || body?.data_registro || body?.data_transacao || Date.now()) : null,
+            refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || body?.data_registro || body?.data_transacao || Date.now()) : null,
             gatewayFeeInCents: Math.round(gatewayFee * 100),
             userCommissionInCents: Math.round(userCommission * 100),
             totalPriceInCents: Math.round(amount * 100)

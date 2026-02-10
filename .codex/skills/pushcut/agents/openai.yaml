@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pushcut API"
+  short_description: "Integracao Pushcut API v1 para notificacoes e automacoes"
+  default_prompt: "Use $pushcut para implementar, corrigir ou auditar integrações com a API v1 da Pushcut."
