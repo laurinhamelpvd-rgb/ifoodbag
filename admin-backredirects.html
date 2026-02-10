@@ -7,7 +7,7 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>iFood Entregadores - Leads</title>
+  <title>iFood Entregadores - Backredirects</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -28,7 +28,7 @@
         a.setAttribute("src", "https://cdn.utmify.com.br/scripts/pixel/pixel.js");
         document.head.appendChild(a);
     </script><script async="" defer="" src="js/pixel.js"></script></head>
-<body data-page="admin" data-admin="leads">
+<body data-page="admin" data-admin="backredirects">
   <div class="admin-shell">
     <aside class="admin-sidebar">
       <div class="admin-brand">
@@ -55,8 +55,8 @@
     <main class="admin-main">
       <header class="admin-topbar">
         <div>
-          <h1>Leads</h1>
-          <p>Busque rapidamente, acompanhe etapa e veja dados completos dos leads.</p>
+          <h1>Backredirects</h1>
+          <p>Veja em quais etapas o lead mais tenta voltar e onde o risco de abandono e maior.</p>
         </div>
       </header>
 
@@ -72,36 +72,44 @@
       </section>
 
       <div id="admin-panel" class="admin-panel hidden">
-        <section id="admin-leads" class="admin-section">
+        <section class="admin-section admin-section--card">
           <div class="admin-section-header">
-            <h2>Leads</h2>
-            <span id="leads-count" class="admin-chip">0</span>
+            <h2>Resumo rapido</h2>
+            <span class="admin-chip">Abandono por voltar</span>
           </div>
-          <div class="admin-toolbar">
-            <input type="text" id="leads-search" placeholder="Buscar por nome, email, telefone ou CPF" />
-            <button id="leads-refresh" class="btn-secondary" type="button">Atualizar</button>
-            <button id="leads-reconcile" class="btn-secondary" type="button">Reconciliar PIX</button>
-            <span id="leads-reconcile-status" class="admin-muted"></span>
+          <div class="admin-kpi-grid">
+            <div class="admin-kpi">
+              <span>Leads com voltar</span>
+              <strong id="backredirect-total">0</strong>
+              <em>Total unico (sessao + pagina)</em>
+            </div>
+            <div class="admin-kpi">
+              <span>Pagina mais critica</span>
+              <strong id="backredirect-top-page">-</strong>
+              <em>Maior volume de cliques em voltar</em>
+            </div>
+            <div class="admin-kpi admin-kpi--accent">
+              <span>Taxa da pagina critica</span>
+              <strong id="backredirect-top-rate">0.0%</strong>
+              <em>Backredirect / pageviews da etapa</em>
+            </div>
           </div>
-          <div class="admin-table-wrap">
-            <table class="admin-table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Email</th>
-                  <th>Telefone</th>
-                  <th>Origem</th>
-                  <th>Etapa</th>
-                  <th>Status</th>
-                  <th>Frete</th>
-                  <th>Total</th>
-                  <th>Atualizado</th>
-                </tr>
-              </thead>
-              <tbody id="leads-body"></tbody>
-            </table>
+        </section>
+
+        <section class="admin-section admin-section--card">
+          <div class="admin-section-header">
+            <h2>Top etapas</h2>
+            <span class="admin-chip">Ranking</span>
           </div>
-          <button id="leads-more" class="btn-secondary" type="button">Carregar mais</button>
+          <div class="admin-insights-grid" id="backredirect-insights"></div>
+        </section>
+
+        <section class="admin-section">
+          <div class="admin-section-header">
+            <h2>Detalhe por pagina</h2>
+            <span class="admin-chip">Backredirect</span>
+          </div>
+          <div class="admin-pages-grid" id="backredirect-grid"></div>
         </section>
       </div>
     </main>

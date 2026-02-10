@@ -4,7 +4,7 @@ const { getSettings, saveSettings, defaultSettings } = require('../../lib/settin
 const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadBySessionId } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
-const { BASE_URL, fetchJson, authHeaders } = require('../../lib/ativus');
+const { getTransactionStatusByIdTransaction } = require('../../lib/ativus');
 const {
     getAtivusStatus,
     isAtivusPaidStatus,
@@ -225,6 +225,78 @@ async function getPages(req, res) {
 
     const data = await response.json().catch(() => []);
     res.json({ data });
+}
+
+async function getBackredirects(req, res) {
+    if (req.method !== 'GET') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+        res.status(500).json({ error: 'Supabase nao configurado.' });
+        return;
+    }
+
+    const response = await fetchFn(`${SUPABASE_URL}/rest/v1/pageview_counts?select=*`, {
+        headers: {
+            apikey: SUPABASE_SERVICE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        res.status(502).json({ error: 'Falha ao buscar dados de backredirect.', detail });
+        return;
+    }
+
+    const rows = await response.json().catch(() => []);
+    const totalsByPage = new Map(
+        (Array.isArray(rows) ? rows : []).map((row) => [
+            String(row?.page || '').trim().toLowerCase(),
+            Number(row?.total) || 0
+        ])
+    );
+
+    const prefix = 'backredirect_';
+    const data = [];
+    totalsByPage.forEach((backTotal, pageKey) => {
+        if (!pageKey.startsWith(prefix)) return;
+        const page = pageKey.slice(prefix.length);
+        if (!page) return;
+        const pageViews = Number(totalsByPage.get(page) || 0);
+        const rate = pageViews > 0
+            ? Math.round((Number(backTotal || 0) / pageViews) * 1000) / 10
+            : 0;
+        data.push({
+            page,
+            backTotal: Number(backTotal || 0),
+            pageViews,
+            rate
+        });
+    });
+
+    data.sort((a, b) => {
+        if (b.backTotal !== a.backTotal) return b.backTotal - a.backTotal;
+        if (b.rate !== a.rate) return b.rate - a.rate;
+        return a.page.localeCompare(b.page);
+    });
+
+    const totalBack = data.reduce((sum, row) => sum + Number(row.backTotal || 0), 0);
+    const totalViews = data.reduce((sum, row) => sum + Number(row.pageViews || 0), 0);
+    const avgRate = totalViews > 0 ? Math.round((totalBack / totalViews) * 1000) / 10 : 0;
+
+    res.json({
+        data,
+        summary: {
+            totalBack,
+            totalViews,
+            avgRate
+        }
+    });
 }
 
 async function login(req, res) {
@@ -497,10 +569,7 @@ async function pixReconcile(req, res) {
     const runOne = async (txid) => {
         checked += 1;
         try {
-            const { response, data } = await fetchJson(
-                `${BASE_URL}/s1/getTransaction/api/getTransactionStatus.php?id_transaction=${encodeURIComponent(txid)}`,
-                { method: 'GET', headers: authHeaders }
-            );
+            const { response, data } = await getTransactionStatusByIdTransaction(txid);
             if (!response.ok) {
                 failed += 1;
                 if (response.status === 403) blockedByAtivus += 1;
@@ -743,6 +812,8 @@ module.exports = async (req, res) => {
             return getLeads(req, res);
         case 'pages':
             return getPages(req, res);
+        case 'backredirects':
+            return getBackredirects(req, res);
         case 'utmfy-test':
             return utmfyTest(req, res);
         case 'utmfy-sale':

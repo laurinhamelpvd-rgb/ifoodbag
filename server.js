@@ -58,6 +58,10 @@ app.get('/admin/pages', (_req, res) => {
     res.sendFile(path.join(__dirname, 'admin-pages.html'));
 });
 
+app.get('/admin/backredirects', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'admin-backredirects.html'));
+});
+
 app.get('/admin/leads', (_req, res) => {
     res.sendFile(path.join(__dirname, 'admin-leads.html'));
 });
@@ -547,6 +551,79 @@ app.get('/api/admin/pages', async (req, res) => {
 
     const data = await response.json().catch(() => []);
     res.json({ data });
+});
+
+app.get('/api/admin/backredirects', async (req, res) => {
+    if (!ensureAllowedRequest(req, res, { requireSession: false })) {
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || '';
+    const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+        res.status(500).json({ error: 'Supabase nao configurado.' });
+        return;
+    }
+
+    const response = await fetchFn(`${SUPABASE_URL}/rest/v1/pageview_counts?select=*`, {
+        headers: {
+            apikey: SUPABASE_SERVICE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        res.status(502).json({ error: 'Falha ao buscar dados de backredirect.', detail });
+        return;
+    }
+
+    const rows = await response.json().catch(() => []);
+    const totalsByPage = new Map(
+        (Array.isArray(rows) ? rows : []).map((row) => [
+            String(row?.page || '').trim().toLowerCase(),
+            Number(row?.total) || 0
+        ])
+    );
+
+    const prefix = 'backredirect_';
+    const data = [];
+    totalsByPage.forEach((backTotal, pageKey) => {
+        if (!pageKey.startsWith(prefix)) return;
+        const page = pageKey.slice(prefix.length);
+        if (!page) return;
+        const pageViews = Number(totalsByPage.get(page) || 0);
+        const rate = pageViews > 0
+            ? Math.round((Number(backTotal || 0) / pageViews) * 1000) / 10
+            : 0;
+        data.push({
+            page,
+            backTotal: Number(backTotal || 0),
+            pageViews,
+            rate
+        });
+    });
+
+    data.sort((a, b) => {
+        if (b.backTotal !== a.backTotal) return b.backTotal - a.backTotal;
+        if (b.rate !== a.rate) return b.rate - a.rate;
+        return a.page.localeCompare(b.page);
+    });
+
+    const totalBack = data.reduce((sum, row) => sum + Number(row.backTotal || 0), 0);
+    const totalViews = data.reduce((sum, row) => sum + Number(row.pageViews || 0), 0);
+    const avgRate = totalViews > 0 ? Math.round((totalBack / totalViews) * 1000) / 10 : 0;
+
+    res.json({
+        data,
+        summary: {
+            totalBack,
+            totalViews,
+            avgRate
+        }
+    });
 });
 
 app.post('/api/pix/webhook', (req, res) => {

@@ -179,10 +179,26 @@ function setupGlobalBackRedirect(page) {
 
     let shownOffer = false;
     let orderBumpBackHandled = false;
+    let backAttemptTracked = false;
+    let backAttemptAt = 0;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const stateBase = { ifb: true, token: guardToken };
     const offer = getBackRedirectOffer(page);
     let lastGuardAt = 0;
+    const guardHashPrefix = '#ifb-back-';
+    const currentHash = window.location.hash || '';
+    const stableHash = currentHash.startsWith(guardHashPrefix) ? '' : currentHash;
+    const baseUrl = `${window.location.pathname}${window.location.search}${stableHash}`;
+    const guardHash = `${guardHashPrefix}${guardToken.slice(-6)}`;
+    const guardUrl = `${window.location.pathname}${window.location.search}${guardHash}`;
+
+    if (currentHash !== stableHash) {
+        try {
+            history.replaceState(history.state || {}, '', baseUrl);
+        } catch (_error) {
+            // Ignore browser-specific history restrictions.
+        }
+    }
 
     const modalEls = ensureCouponModalElements();
     const modal = modalEls.modal;
@@ -208,6 +224,12 @@ function setupGlobalBackRedirect(page) {
     }
 
     const resolveTargetUrl = () => buildBackRedirectUrl(page);
+    const markBackAttempt = () => {
+        if (backAttemptTracked) return;
+        backAttemptTracked = true;
+        trackPageView(`backredirect_${page}`);
+        trackLead('backredirect_click', { stage: page });
+    };
 
     const showCouponModal = () => {
         modal.classList.remove('hidden');
@@ -228,17 +250,22 @@ function setupGlobalBackRedirect(page) {
         const now = Date.now();
         if (!force && (now - lastGuardAt) < 350) return;
         const state = history.state || {};
-        if (state.ifb && state.token === guardToken && state.step === 1) return;
+        if (state.ifb && state.token === guardToken && state.step === 1 && window.location.hash === guardHash) return;
         try {
-            history.replaceState({ ...stateBase, step: 0 }, '', location.href);
-            history.pushState({ ...stateBase, step: 1 }, '', location.href);
+            history.replaceState({ ...stateBase, step: 0 }, '', baseUrl);
+            history.pushState({ ...stateBase, step: 1 }, '', guardUrl);
             lastGuardAt = now;
         } catch (error) {
             return;
         }
     };
 
-    const handlePop = () => {
+    const handleBackAttempt = () => {
+        const now = Date.now();
+        if ((now - backAttemptAt) < 120) return;
+        backAttemptAt = now;
+        markBackAttempt();
+
         if (page === 'orderbump') {
             if (orderBumpBackHandled) return;
             orderBumpBackHandled = true;
@@ -290,7 +317,14 @@ function setupGlobalBackRedirect(page) {
     window.addEventListener('load', () => {
         reinforceGuards();
     }, { once: true });
-    window.addEventListener('popstate', handlePop);
+    window.addEventListener('popstate', handleBackAttempt);
+    window.addEventListener('hashchange', (event) => {
+        const oldHash = new URL(event.oldURL || window.location.href).hash;
+        const newHash = new URL(event.newURL || window.location.href).hash;
+        if (oldHash !== guardHash) return;
+        if (newHash === guardHash) return;
+        handleBackAttempt();
+    });
 
     if (btnApply) {
         btnApply.addEventListener('click', async () => {
@@ -1712,6 +1746,11 @@ function initAdmin() {
     const navItems = document.querySelectorAll('.admin-nav-item');
     const pagesGrid = document.getElementById('pages-grid');
     const pagesInsights = document.getElementById('pages-insights');
+    const backredirectGrid = document.getElementById('backredirect-grid');
+    const backredirectInsights = document.getElementById('backredirect-insights');
+    const backredirectTotal = document.getElementById('backredirect-total');
+    const backredirectTopPage = document.getElementById('backredirect-top-page');
+    const backredirectTopRate = document.getElementById('backredirect-top-rate');
     const adminPage = document.body.getAttribute('data-admin') || '';
     const testPixelBtn = document.getElementById('admin-test-pixel');
     const testPixelStatus = document.getElementById('admin-test-pixel-status');
@@ -1736,6 +1775,17 @@ function initAdmin() {
         paid: 0,
         lastUpdated: ''
     };
+    const funnelPageMeta = {
+        home: { label: 'index.html', desc: 'Pagina inicial (entrada do funil)' },
+        quiz: { label: 'quiz.html', desc: 'Perguntas de qualificacao' },
+        personal: { label: 'dados.html', desc: 'Coleta de dados pessoais' },
+        cep: { label: 'endereco.html', desc: 'Consulta e confirmacao de CEP' },
+        processing: { label: 'processando.html', desc: 'Video + verificacao de elegibilidade' },
+        success: { label: 'sucesso.html', desc: 'Aprovado e chamada para resgate' },
+        checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
+        orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
+        pix: { label: 'pix.html', desc: 'Pagamento via PIX' }
+    };
     let currentSettings = null;
 
     const hasPixelForm = !!(
@@ -1757,6 +1807,7 @@ function initAdmin() {
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
     const wantsPages = !!pagesGrid;
+    const wantsBackredirects = !!backredirectGrid;
 
     const setLoginVisible = (visible) => {
         if (loginWrap) loginWrap.classList.toggle('hidden', !visible);
@@ -2140,7 +2191,7 @@ function initAdmin() {
         const res = await adminFetch('/api/admin/pages');
         if (!res.ok) return;
         const data = await res.json();
-        const rows = data.data || [];
+        const rows = (data.data || []).filter((row) => !String(row?.page || '').startsWith('backredirect_'));
         const max = rows.reduce((acc, row) => Math.max(acc, Number(row.total) || 0), 0) || 1;
         pagesGrid.innerHTML = '';
         rows.forEach((row) => {
@@ -2157,17 +2208,6 @@ function initAdmin() {
 
         if (pagesInsights) {
             const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix'];
-            const pageMeta = {
-                home: { label: 'index.html', desc: 'Pagina inicial (entrada do funil)' },
-                quiz: { label: 'quiz.html', desc: 'Perguntas de qualificacao' },
-                personal: { label: 'dados.html', desc: 'Coleta de dados pessoais' },
-                cep: { label: 'endereco.html', desc: 'Consulta e confirmacao de CEP' },
-                processing: { label: 'processando.html', desc: 'Video + verificacao de elegibilidade' },
-                success: { label: 'sucesso.html', desc: 'Aprovado e chamada para resgate' },
-                checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
-                orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
-                pix: { label: 'pix.html', desc: 'Pagamento via PIX' }
-            };
             const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
             pagesInsights.innerHTML = '';
             let prevEffective = null;
@@ -2179,7 +2219,7 @@ function initAdmin() {
                 const conv = prev ? Math.round((carried / prev) * 100) : 0;
                 const drop = prev ? Math.max(0, prev - carried) : 0;
                 const direct = Math.max(0, current - prev);
-                const meta = pageMeta[page] || { label: page, desc: 'Etapa do funil' };
+                const meta = funnelPageMeta[page] || { label: page, desc: 'Etapa do funil' };
                 const card = document.createElement('div');
                 card.className = 'admin-insight-card';
                 card.innerHTML = `
@@ -2193,6 +2233,76 @@ function initAdmin() {
                 `;
                 pagesInsights.appendChild(card);
                 prevEffective = carried;
+            });
+        }
+    };
+
+    const loadBackredirects = async () => {
+        if (!backredirectGrid) return;
+        const res = await adminFetch('/api/admin/backredirects');
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => ({}));
+        const rows = Array.isArray(payload?.data) ? payload.data : [];
+        const summary = payload?.summary || {};
+        const totalBack = Number(summary.totalBack || 0);
+
+        if (backredirectTotal) {
+            backredirectTotal.textContent = String(totalBack);
+        }
+
+        if (backredirectTopPage) {
+            backredirectTopPage.textContent = rows[0]?.page ? (funnelPageMeta[rows[0].page]?.label || rows[0].page) : '-';
+        }
+        if (backredirectTopRate) {
+            const rate = Number(rows[0]?.rate || 0);
+            backredirectTopRate.textContent = `${rate.toFixed(1)}%`;
+        }
+
+        if (backredirectGrid) {
+            backredirectGrid.innerHTML = '';
+            const max = rows.reduce((acc, row) => Math.max(acc, Number(row.backTotal) || 0), 0) || 1;
+            rows.forEach((row) => {
+                const page = String(row.page || '').trim();
+                const meta = funnelPageMeta[page] || { label: `${page || '-'}.html`, desc: 'Etapa do funil' };
+                const backTotal = Number(row.backTotal || 0);
+                const pageViews = Number(row.pageViews || 0);
+                const rate = Number(row.rate || 0);
+                const pct = Math.round((backTotal / max) * 100);
+                const card = document.createElement('div');
+                card.className = 'admin-page-card';
+                card.innerHTML = `
+                    <strong>${backTotal}</strong>
+                    <span>${meta.label}</span>
+                    <div class="admin-page-bar"><i style="width: ${pct}%"></i></div>
+                    <span>Taxa de voltar: ${rate.toFixed(1)}%</span>
+                    <span>Pageviews: ${pageViews}</span>
+                    <span>${meta.desc}</span>
+                `;
+                backredirectGrid.appendChild(card);
+            });
+            if (!rows.length) {
+                const empty = document.createElement('div');
+                empty.className = 'admin-insight-card';
+                empty.innerHTML = '<strong>Sem dados ainda</strong><span>Assim que houver clique em voltar, os cards aparecem aqui.</span>';
+                backredirectGrid.appendChild(empty);
+            }
+        }
+
+        if (backredirectInsights) {
+            backredirectInsights.innerHTML = '';
+            rows.slice(0, 6).forEach((row, index) => {
+                const page = String(row.page || '').trim();
+                const meta = funnelPageMeta[page] || { label: page || '-', desc: 'Etapa do funil' };
+                const card = document.createElement('div');
+                card.className = 'admin-insight-card';
+                card.innerHTML = `
+                    <span class="admin-insight-pill">#${index + 1} ${meta.label}</span>
+                    <span class="admin-insight-count">${Number(row.backTotal || 0)} leads clicaram voltar</span>
+                    <strong>${Number(row.rate || 0).toFixed(1)}%</strong>
+                    <span>Taxa de voltar vs pageviews da etapa</span>
+                    <span>${meta.desc}</span>
+                `;
+                backredirectInsights.appendChild(card);
             });
         }
     };
@@ -2216,6 +2326,7 @@ function initAdmin() {
         if (hasPixelForm || hasUtmfyForm) await loadSettings();
         if (wantsLeads) await loadLeads({ reset: true });
         if (wantsPages) await loadPageCounts();
+        if (wantsBackredirects) await loadBackredirects();
     });
 
     saveBtn?.addEventListener('click', saveSettings);
@@ -2251,11 +2362,13 @@ function initAdmin() {
             if (hasPixelForm || hasUtmfyForm) loadSettings();
             if (wantsLeads) loadLeads({ reset: true });
             if (wantsPages) loadPageCounts();
+            if (wantsBackredirects) loadBackredirects();
             // Keep overview fresh without manual reload.
             setInterval(() => {
                 if (document.visibilityState !== 'visible') return;
                 if (wantsLeads) loadLeads({ reset: true });
                 if (wantsPages) loadPageCounts();
+                if (wantsBackredirects) loadBackredirects();
             }, 30000);
         } else {
             setLoginVisible(true);
