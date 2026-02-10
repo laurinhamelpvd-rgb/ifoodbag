@@ -827,18 +827,143 @@ body[data-page='orderbump'] .step {
 /* Upsell */
 .upsell-step {
     max-width: 700px;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 8% 6%, rgba(234, 29, 44, 0.08), transparent 36%),
+        radial-gradient(circle at 92% 0%, rgba(234, 29, 44, 0.06), transparent 30%),
+        #fff;
 }
 
 .upsell-title {
     margin-top: 6px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+    max-width: 30rem;
 }
 
 .upsell-subtitle {
-    margin: 0 auto 14px;
+    margin: 0 auto 8px;
     max-width: 34rem;
-    color: #5f5f5f;
-    font-size: 1rem;
+    color: #555;
+    font-size: 1.03rem;
+    line-height: 1.45;
+}
+
+.upsell-urgency {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid #ffd4d7;
+    background: linear-gradient(120deg, #fff5f6 0%, #fff 100%);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 8px 18px rgba(234, 29, 44, 0.08);
+}
+
+.upsell-urgency__left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    gap: 3px;
+}
+
+.upsell-urgency__left strong {
+    color: #1f1f1f;
+    font-size: 0.96rem;
+    line-height: 1.2;
+}
+
+.upsell-urgency__left span {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.upsell-urgency__left b {
+    color: var(--primary-color);
+    font-size: 0.95rem;
+}
+
+.upsell-urgency__price {
+    min-width: 104px;
+    border-radius: 12px;
+    border: 1px dashed rgba(234, 29, 44, 0.5);
+    background: #fff;
+    padding: 8px 10px;
+    text-align: center;
+}
+
+.upsell-urgency__price span {
+    display: block;
+    font-size: 0.74rem;
+    color: #747474;
+    margin-bottom: 2px;
+}
+
+.upsell-urgency__price strong {
+    color: var(--primary-color);
+    font-size: 1.03rem;
+    line-height: 1;
+}
+
+.upsell-urgency--expired {
+    border-color: #ffd9a8;
+    background: linear-gradient(120deg, #fff8ef 0%, #fff 100%);
+}
+
+.upsell-urgency--expired .upsell-urgency__left b {
+    color: #bf6a00;
+}
+
+.upsell-delivery-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.upsell-delivery-card {
+    border: 1px solid #ececec;
+    border-radius: 14px;
+    background: #fff;
+    text-align: left;
+    padding: 12px;
+}
+
+.upsell-delivery-card__label {
+    display: inline-block;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #8a8a8a;
+    margin-bottom: 6px;
+}
+
+.upsell-delivery-card strong {
+    display: block;
+    color: #2b2b2b;
+    font-size: 1.05rem;
+    line-height: 1.15;
+}
+
+.upsell-delivery-card small {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.83rem;
+    color: #777;
+}
+
+.upsell-delivery-card--priority {
+    border-color: #ffbcc1;
+    background: linear-gradient(180deg, #fffafa 0%, #fff 100%);
+    box-shadow: 0 6px 16px rgba(234, 29, 44, 0.09);
+}
+
+.upsell-delivery-card--priority strong {
+    color: var(--primary-color);
 }
 
 .upsell-summary {
@@ -887,6 +1012,61 @@ body[data-page='orderbump'] .step {
         radial-gradient(circle at 80% 80%, rgba(0, 0, 0, 0.06), transparent 45%),
         #ffffff;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 12px;
+}
+
+.upsell-image-slot__hint {
+    font-size: 0.82rem;
+    color: #8a8a8a;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px dashed #e0e0e0;
+    border-radius: 999px;
+    padding: 6px 10px;
+}
+
+.upsell-benefits {
+    list-style: none;
+    width: 100%;
+    display: grid;
+    gap: 8px;
+    text-align: left;
+}
+
+.upsell-benefits li {
+    position: relative;
+    padding-left: 26px;
+    font-size: 0.94rem;
+    color: #383838;
+    line-height: 1.25;
+}
+
+.upsell-benefits li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at center, #fff 26%, transparent 27%),
+        linear-gradient(135deg, #44c86a 0%, #25a74e 100%);
+    box-shadow: 0 4px 8px rgba(45, 180, 87, 0.22);
+}
+
+.upsell-benefits li::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 7px;
+    width: 7px;
+    height: 4px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(-45deg);
 }
 
 body[data-page='upsell'] .step {
@@ -895,6 +1075,21 @@ body[data-page='upsell'] .step {
 
 body[data-page='upsell'] .action-stack {
     margin-top: 2px;
+}
+
+.upsell-step--paid .upsell-urgency,
+.upsell-step--paid .upsell-delivery-grid {
+    display: none;
+}
+
+.upsell-step--paid .upsell-benefits li::before {
+    background:
+        radial-gradient(circle at center, #fff 26%, transparent 27%),
+        linear-gradient(135deg, #2db457 0%, #18903e 100%);
+}
+
+.text-success {
+    color: #1d9f48 !important;
 }
 
 .verified-icon {
@@ -1000,6 +1195,39 @@ body[data-page='upsell'] .action-stack {
     font-size: 0.9rem;
     margin-bottom: 16px;
     text-align: left;
+}
+
+.email-suggest {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 12px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+    padding: 6px;
+    display: grid;
+    gap: 4px;
+}
+
+.email-suggest__item {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    border-radius: 8px;
+    text-align: left;
+    padding: 9px 10px;
+    color: #2d2d2d;
+    font-size: 0.93rem;
+    cursor: pointer;
+}
+
+.email-suggest__item:hover,
+.email-suggest__item--active {
+    background: #fff1f2;
+    color: var(--primary-color);
 }
 
 /* Address Card */
@@ -2484,5 +2712,35 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
 
     .upsell-image-slot {
         min-height: 190px;
+    }
+
+    .upsell-urgency {
+        padding: 10px 10px;
+        gap: 8px;
+    }
+
+    .upsell-urgency__left strong {
+        font-size: 0.88rem;
+    }
+
+    .upsell-urgency__left span {
+        font-size: 0.78rem;
+    }
+
+    .upsell-urgency__price {
+        min-width: 90px;
+        padding: 7px 6px;
+    }
+
+    .upsell-delivery-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .upsell-delivery-card {
+        padding: 10px;
+    }
+
+    .upsell-benefits li {
+        font-size: 0.9rem;
     }
 }

@@ -1020,11 +1020,28 @@ async function pixReconcile(req, res) {
                             ? forwarded.split(',')[0].trim()
                             : req?.socket?.remoteAddress || '';
                         const userAgent = req?.headers?.['user-agent'] || '';
+                        const leadPayload = asObject(leadData?.payload);
+                        const fbclid = String(leadData?.fbclid || leadPayload?.fbclid || leadUtm?.fbclid || '').trim();
+                        const fbp = String(leadPayload?.fbp || '').trim();
+                        const fbc = String(leadPayload?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
                         await enqueueDispatch({
                             channel: 'pixel',
                             eventName: 'Purchase',
                             dedupeKey: `pixel:purchase:${txid}`,
-                            payload: { amount, client_ip: clientIp, user_agent: userAgent }
+                            payload: {
+                                amount,
+                                orderId: txid || leadData?.session_id || sessionIdFallback || '',
+                                shippingName: leadData?.shipping_name || '',
+                                isUpsell,
+                                client_email: leadData?.email || data?.email || '',
+                                client_document: leadData?.cpf || data?.documento || '',
+                                client_ip: clientIp,
+                                user_agent: userAgent,
+                                source_url: leadData?.source_url || leadPayload?.sourceUrl || '',
+                                fbclid,
+                                fbp,
+                                fbc
+                            }
                         }).catch(() => null);
                         await processDispatchQueue(8).catch(() => null);
                     }

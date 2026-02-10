@@ -40,6 +40,10 @@ module.exports = async (req, res) => {
         const { amount, personal = {}, address = {}, extra = {}, shipping = {}, bump, upsell = null } = rawBody;
         const value = Number(amount);
         const upsellEnabled = Boolean(upsell && upsell.enabled);
+        const sourceUrl = String(rawBody?.sourceUrl || '').trim();
+        const fbclid = String(rawBody?.fbclid || rawBody?.utm?.fbclid || '').trim();
+        const fbp = String(rawBody?.fbp || '').trim();
+        const fbc = String(rawBody?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
 
         if (!value || value <= 0) {
             return res.status(400).json({ error: 'Valor do frete invalido.' });
@@ -247,27 +251,33 @@ module.exports = async (req, res) => {
         const pushKind = upsellEnabled ? 'upsell_pix_created' : 'pix_created';
         const pushImmediate = await sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false }));
         if (!pushImmediate?.ok) {
-            enqueueDispatch({
+            await enqueueDispatch({
                 channel: 'pushcut',
                 kind: pushKind,
                 dedupeKey: txid ? `pushcut:pix_created:${txid}` : null,
                 payload: pushPayload
-            }).then(() => processDispatchQueue(8)).catch(() => null);
+            }).catch(() => null);
+            await processDispatchQueue(8).catch(() => null);
         }
 
-        enqueueDispatch({
+        await enqueueDispatch({
             channel: 'pixel',
-            eventName: 'InitiateCheckout',
-            dedupeKey: txid ? `pixel:initiate_checkout:${txid}` : null,
+            eventName: 'AddPaymentInfo',
+            dedupeKey: txid ? `pixel:add_payment_info:${txid}` : null,
             payload: {
                 amount: totalAmount,
                 orderId: utmOrderId,
                 shippingName: shipping?.name || '',
                 isUpsell: upsellEnabled,
                 client_email: email,
-                client_document: cpf
+                client_document: cpf,
+                source_url: sourceUrl,
+                fbclid,
+                fbp,
+                fbc
             }
-        }).then(() => processDispatchQueue(8)).catch(() => null);
+        }).catch(() => null);
+        await processDispatchQueue(8).catch(() => null);
 
         return res.status(200).json({
             idTransaction: txid,

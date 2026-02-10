@@ -7,6 +7,7 @@ const { getSettings, saveSettings, defaultSettings } = require('./lib/settings-s
 const { verifyAdminPassword, issueAdminCookie, verifyAdminCookie, requireAdmin } = require('./lib/admin-auth');
 const { sendUtmfy } = require('./lib/utmfy');
 const { upsertPageview } = require('./lib/pageviews-store');
+const { sendPixelServerEvent } = require('./lib/pixel-capi');
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -365,6 +366,21 @@ app.post('/api/pix/create', async (req, res) => {
             status: 'waiting_payment'
         }).catch(() => null);
 
+        const fbclid = String(req.body?.fbclid || req.body?.utm?.fbclid || '').trim();
+        const fbp = String(req.body?.fbp || '').trim();
+        const fbc = String(req.body?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
+        sendPixelServerEvent('AddPaymentInfo', {
+            amount: Number(value.toFixed(2)),
+            orderId: txid || req.body?.sessionId || '',
+            shippingName: shipping?.name || '',
+            client_email: email,
+            client_document: cpf,
+            source_url: req.body?.sourceUrl || '',
+            fbclid,
+            fbp,
+            fbc
+        }, req).catch(() => null);
+
         return res.json({
             idTransaction: txid,
             paymentCode: data.paymentCode || data.paymentcode,
@@ -701,6 +717,13 @@ app.post('/api/pix/webhook', (req, res) => {
             status: statusRaw || 'confirmed',
             payload: body
         }).catch(() => null);
+        sendPixelServerEvent('Purchase', {
+            amount: Number(body?.amount || body?.valor_bruto || body?.valor_liquido || 0),
+            orderId: txid,
+            shippingName: String(body?.metadata?.shippingName || ''),
+            client_email: String(body?.client_email || body?.email || ''),
+            client_document: String(body?.client_document || body?.documento || '')
+        }, req).catch(() => null);
     }
 
     return res.json({ status: 'success' });

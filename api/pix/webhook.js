@@ -422,15 +422,20 @@ module.exports = async (req, res) => {
         const pushKind = upsellEvent ? 'upsell_pix_confirmed' : 'pix_confirmed';
         const pushImmediate = await sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false }));
         if (!pushImmediate?.ok) {
-            enqueueDispatch({
+            await enqueueDispatch({
                 channel: 'pushcut',
                 kind: pushKind,
                 dedupeKey: `pushcut:pix_confirmed:${txid}`,
                 payload: pushPayload
-            }).then(() => processDispatchQueue(10)).catch(() => null);
+            }).catch(() => null);
+            await processDispatchQueue(10).catch(() => null);
         }
 
-        enqueueDispatch({
+        const leadPayload = asObject(leadData?.payload);
+        const fbclid = String(leadData?.fbclid || leadPayload?.fbclid || leadUtm?.fbclid || '').trim();
+        const fbp = String(leadPayload?.fbp || '').trim();
+        const fbc = String(leadPayload?.fbc || '').trim() || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
+        await enqueueDispatch({
             channel: 'pixel',
             eventName: 'Purchase',
             dedupeKey: `pixel:purchase:${txid}`,
@@ -442,9 +447,14 @@ module.exports = async (req, res) => {
                 client_email: body?.client_email || leadData?.email,
                 client_document: body?.client_document || leadData?.cpf,
                 client_ip: clientIp,
-                user_agent: userAgent
+                user_agent: userAgent,
+                source_url: leadData?.source_url || leadPayload?.sourceUrl || '',
+                fbclid,
+                fbp,
+                fbc
             }
-        }).then(() => processDispatchQueue(10)).catch(() => null);
+        }).catch(() => null);
+        await processDispatchQueue(10).catch(() => null);
     }
 
     res.status(200).json({ status: 'success' });

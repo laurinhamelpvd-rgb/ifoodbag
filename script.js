@@ -126,13 +126,15 @@ const dom = {};
 const pathMemo = {};
 
 document.addEventListener('DOMContentLoaded', () => {
+    const page = document.body.dataset.page || '';
     cacheCommonDom();
     captureUtmParams();
     ensureApiSession().catch(() => null);
-    initMarketing().catch(() => null);
+    if (page !== 'admin') {
+        initMarketing().catch(() => null);
+    }
     initStockCounter();
 
-    const page = document.body.dataset.page || '';
     if (page && page !== 'admin') {
         trackPageView(page);
     }
@@ -513,6 +515,150 @@ function initQuiz() {
     });
 }
 
+const COMMON_EMAIL_DOMAINS = [
+    'gmail.com',
+    'hotmail.com',
+    'outlook.com',
+    'icloud.com',
+    'live.com',
+    'yahoo.com.br',
+    'uol.com.br',
+    'bol.com.br'
+];
+
+function setupEmailAutocomplete(emailInput) {
+    if (!emailInput) return;
+    const group = emailInput.closest('.input-group');
+    if (!group) return;
+
+    let box = group.querySelector('.email-suggest');
+    if (!box) {
+        box = document.createElement('div');
+        box.className = 'email-suggest hidden';
+        box.setAttribute('role', 'listbox');
+        box.setAttribute('aria-label', 'Sugestoes de e-mail');
+        group.appendChild(box);
+    }
+
+    let activeIndex = -1;
+    let currentSuggestions = [];
+
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+    const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+
+    const hide = () => {
+        box.classList.add('hidden');
+        box.innerHTML = '';
+        activeIndex = -1;
+        currentSuggestions = [];
+    };
+
+    const getSuggestions = (rawValue) => {
+        const value = normalize(rawValue);
+        if (!value) return [];
+        if (value.startsWith('@')) return [];
+        const atCount = (value.match(/@/g) || []).length;
+        if (atCount > 1) return [];
+
+        const [localRaw = '', domainRaw = ''] = value.split('@');
+        const local = localRaw.replace(/[^a-z0-9._%+-]/g, '');
+        if (local.length < 2) return [];
+
+        const filteredDomains = COMMON_EMAIL_DOMAINS.filter((domain) => !domainRaw || domain.startsWith(domainRaw));
+        return filteredDomains
+            .slice(0, 6)
+            .map((domain) => `${local}@${domain}`)
+            .filter((suggestion) => suggestion !== value);
+    };
+
+    const setActive = (nextIndex) => {
+        activeIndex = nextIndex;
+        const buttons = box.querySelectorAll('.email-suggest__item');
+        buttons.forEach((button, index) => {
+            button.classList.toggle('email-suggest__item--active', index === activeIndex);
+        });
+    };
+
+    const applySuggestion = (value) => {
+        emailInput.value = value;
+        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+        hide();
+        emailInput.focus();
+    };
+
+    const render = (suggestions) => {
+        if (!suggestions.length) {
+            hide();
+            return;
+        }
+
+        currentSuggestions = suggestions;
+        box.innerHTML = suggestions.map((item, index) => `
+            <button type="button" class="email-suggest__item${index === 0 ? ' email-suggest__item--active' : ''}" data-value="${escapeText(item)}">
+                ${escapeText(item)}
+            </button>
+        `).join('');
+        setActive(0);
+        box.classList.remove('hidden');
+    };
+
+    emailInput.addEventListener('input', () => {
+        render(getSuggestions(emailInput.value));
+    });
+
+    emailInput.addEventListener('focus', () => {
+        if (emailInput.value) {
+            render(getSuggestions(emailInput.value));
+        }
+    });
+
+    emailInput.addEventListener('keydown', (event) => {
+        if (box.classList.contains('hidden') || !currentSuggestions.length) return;
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            const next = (activeIndex + 1) % currentSuggestions.length;
+            setActive(next);
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            const prev = (activeIndex - 1 + currentSuggestions.length) % currentSuggestions.length;
+            setActive(prev);
+            return;
+        }
+        if (event.key === 'Enter' && activeIndex >= 0) {
+            event.preventDefault();
+            applySuggestion(currentSuggestions[activeIndex]);
+            return;
+        }
+        if (event.key === 'Escape') {
+            hide();
+        }
+    });
+
+    box.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+    });
+
+    box.addEventListener('click', (event) => {
+        const button = event.target.closest('.email-suggest__item');
+        if (!button) return;
+        const selected = String(button.getAttribute('data-value') || '').trim();
+        if (selected) applySuggestion(selected);
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!group.contains(event.target)) hide();
+    });
+}
+
 function initPersonal() {
     setStage('personal');
     trackLead('personal_view', { stage: 'personal' });
@@ -538,6 +684,7 @@ function initPersonal() {
     cpf?.addEventListener('input', () => maskCPF(cpf));
     phone?.addEventListener('input', () => maskPhone(phone));
     birthdate?.addEventListener('input', () => maskDate(birthdate));
+    setupEmailAutocomplete(email);
 
     form?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -1623,6 +1770,11 @@ function initUpsell() {
     const loading = document.getElementById('upsell-loading');
     const subtitle = document.querySelector('.upsell-subtitle');
     const highlightRow = document.querySelector('.upsell-summary__row--highlight');
+    const upsellStep = document.querySelector('.upsell-step');
+    const urgencyCard = document.getElementById('upsell-urgency');
+    const deliveryGrid = document.getElementById('upsell-delivery-grid');
+    const timerLabel = document.getElementById('upsell-timer');
+    const benefitsList = document.getElementById('upsell-benefits');
 
     if (leadName && personal?.name) {
         const firstName = String(personal.name || '').trim().split(/\s+/)[0];
@@ -1642,12 +1794,43 @@ function initUpsell() {
         if (loading) loading.classList.toggle('hidden', !active);
     };
 
+    const startUpsellCountdown = () => {
+        if (!timerLabel) return;
+        const storageKey = 'ifood_upsell_deadline_ts';
+        const now = Date.now();
+        const fallbackDeadline = now + (10 * 60 * 1000);
+        const savedRaw = Number(sessionStorage.getItem(storageKey) || 0);
+        const deadline = savedRaw > now ? savedRaw : fallbackDeadline;
+        sessionStorage.setItem(storageKey, String(deadline));
+
+        const render = () => {
+            const diff = Math.max(0, deadline - Date.now());
+            const totalSeconds = Math.floor(diff / 1000);
+            const mm = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+            const ss = String(totalSeconds % 60).padStart(2, '0');
+            timerLabel.textContent = `${mm}:${ss}`;
+            if (diff <= 0 && urgencyCard) {
+                urgencyCard.classList.add('upsell-urgency--expired');
+            }
+            return diff > 0;
+        };
+
+        render();
+        const interval = window.setInterval(() => {
+            const keep = render();
+            if (!keep) window.clearInterval(interval);
+        }, 1000);
+    };
+
     if (paidMode) {
+        if (upsellStep) {
+            upsellStep.classList.add('upsell-step--paid');
+        }
         if (subtitle) {
             subtitle.textContent = 'Pagamento confirmado. Sua prioridade de envio foi ativada e sua bag entra no proximo lote.';
         }
         if (highlightRow) {
-            highlightRow.innerHTML = '<span>Status da prioridade</span><strong>Confirmado</strong>';
+            highlightRow.innerHTML = '<span>Status da prioridade</span><strong class="text-success">Confirmado</strong>';
         }
         if (btnAccept) {
             btnAccept.textContent = 'Prioridade ativa';
@@ -1656,9 +1839,20 @@ function initUpsell() {
         if (btnSkip) {
             btnSkip.classList.add('hidden');
         }
+        if (urgencyCard) urgencyCard.classList.add('hidden');
+        if (deliveryGrid) deliveryGrid.classList.add('hidden');
+        if (benefitsList) {
+            benefitsList.innerHTML = [
+                'Recebimento prioritario confirmado para esta bag',
+                'Seu pedido foi movido para o proximo lote de saida',
+                'Acompanhe o rastreio para a previsao final de entrega'
+            ].map((text) => `<li>${text}</li>`).join('');
+        }
         trackLead('upsell_paid_view', { stage: 'upsell', shipping, pix });
         return;
     }
+
+    startUpsellCountdown();
 
     btnAccept?.addEventListener('click', async () => {
         const expressShipping = {
@@ -1677,6 +1871,7 @@ function initUpsell() {
         });
 
         try {
+            btnAccept.textContent = 'Gerando PIX da prioridade...';
             await createPixCharge(expressShipping, 0, {
                 sourceStage: 'upsell',
                 upsell: {
@@ -1688,6 +1883,7 @@ function initUpsell() {
                 }
             });
         } catch (error) {
+            btnAccept.textContent = 'Quero receber em 1 dia por R$ 18,98';
             showToast(error.message || 'Nao foi possivel gerar o PIX de adiantamento.', 'error');
             setLoading(false);
         }
@@ -1812,6 +2008,7 @@ function initPix() {
     let pollingBusy = false;
     let redirectedToUpsell = false;
     let inactiveStatusShown = false;
+    const sentPurchaseByTxid = new Set();
 
     const clearStatusPolling = () => {
         if (statusPollTimer) {
@@ -1832,6 +2029,23 @@ function initPix() {
             paidAt: new Date().toISOString(),
             upsellPaid: isUpsellPix
         });
+
+        const txid = String(pix?.idTransaction || '').trim();
+        if (!txid || !sentPurchaseByTxid.has(txid)) {
+            if (txid) sentPurchaseByTxid.add(txid);
+            trackLead('pix_paid', {
+                stage: 'pix',
+                shipping,
+                pix: {
+                    ...pix,
+                    idTransaction: txid,
+                    statusRaw: String(statusRaw || 'paid')
+                },
+                amount: Number(pix?.amount || shipping?.price || 0),
+                isUpsell: isUpsellPix
+            });
+        }
+
         if (isUpsellPix) {
             trackLead('upsell_pix_paid_redirect', {
                 stage: 'pix',
@@ -3269,18 +3483,50 @@ async function isOrderBumpEnabled() {
 }
 
 function loadFacebookPixel(pixelId) {
-    if (!pixelId || window.fbq) return;
+    const id = String(pixelId || '').trim();
+    if (!id) return;
+
+    if (!window.__ifoodPixelInits || typeof window.__ifoodPixelInits !== 'object') {
+        window.__ifoodPixelInits = {};
+    }
+
     /* eslint-disable */
-    !function(f,b,e,v,n,t,s){
-        if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-        n.queue=[];t=b.createElement(e);t.async=!0;
-        t.src=v;s=b.getElementsByTagName(e)[0];
-        s.parentNode.insertBefore(t,s)
-    }(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', pixelId);
+    if (!window.fbq) {
+        !function(f,b,e,v,n,t,s){
+            if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+            n.queue=[];t=b.createElement(e);t.async=!0;
+            t.src=v;s=b.getElementsByTagName(e)[0];
+            s.parentNode.insertBefore(t,s)
+        }(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    }
     /* eslint-enable */
+
+    if (window.__ifoodPixelInits[id]) return;
+    try {
+        window.fbq('init', id);
+        window.__ifoodPixelInits[id] = true;
+    } catch (_error) {}
+}
+
+function getCookieValue(name) {
+    const needle = `${name}=`;
+    const chunks = String(document.cookie || '').split(';');
+    for (const raw of chunks) {
+        const item = raw.trim();
+        if (!item.startsWith(needle)) continue;
+        return decodeURIComponent(item.slice(needle.length));
+    }
+    return '';
+}
+
+function getPixelBrowserContext(utm = {}) {
+    const fbclid = String(utm?.fbclid || '').trim();
+    const fbp = String(getCookieValue('_fbp') || '').trim();
+    const cookieFbc = String(getCookieValue('_fbc') || '').trim();
+    const fbc = cookieFbc || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : '');
+    return { fbclid, fbp, fbc };
 }
 
 async function initMarketing() {
@@ -3293,16 +3539,47 @@ async function initMarketing() {
     }
 }
 
-function firePixelEvent(eventName, data = {}) {
+function firePixelEvent(eventName, data = {}, options = {}) {
     if (!window.fbq) return;
+    const pixelId = String(state.pixelConfig?.id || '').trim();
+    const hasOptions = options && Object.keys(options).length > 0;
     try {
-        window.fbq('track', eventName, data);
-    } catch (_error) {}
+        if (pixelId) {
+            if (hasOptions) {
+                window.fbq('trackSingle', pixelId, eventName, data, options);
+            } else {
+                window.fbq('trackSingle', pixelId, eventName, data);
+            }
+            return;
+        }
+
+        if (hasOptions) {
+            window.fbq('track', eventName, data, options);
+        } else {
+            window.fbq('track', eventName, data);
+        }
+    } catch (_error) {
+        try {
+            if (hasOptions) {
+                window.fbq('track', eventName, data, options);
+            } else {
+                window.fbq('track', eventName, data);
+            }
+        } catch (_error2) {}
+    }
 }
 
 function maybeTrackPixel(eventName, payload = {}) {
     const pixel = state.pixelConfig;
     if (!pixel || !pixel.enabled || !pixel.id) return;
+    const explicitValue = Number(payload?.amount);
+    const shippingValue = Number(payload?.shipping?.price || 0);
+    const bumpValue = Number(payload?.bump?.price || 0);
+    const computedValue = Number.isFinite(shippingValue + bumpValue)
+        ? Number((shippingValue + bumpValue).toFixed(2))
+        : 0;
+    const totalValue = Number.isFinite(explicitValue) && explicitValue > 0 ? explicitValue : computedValue;
+    const txid = String(payload?.pix?.idTransaction || payload?.pix?.idtransaction || '').trim();
 
     if (eventName === 'quiz_view' && pixel.events?.quiz_view !== false) {
         firePixelEvent('ViewContent', {
@@ -3315,7 +3592,10 @@ function maybeTrackPixel(eventName, payload = {}) {
     }
 
     if (eventName === 'checkout_view' && pixel.events?.checkout !== false) {
-        firePixelEvent('InitiateCheckout', { currency: 'BRL' });
+        firePixelEvent('InitiateCheckout', {
+            currency: 'BRL',
+            ...(totalValue > 0 ? { value: totalValue } : {})
+        });
     }
 
     if (eventName === 'upsell_view' && pixel.events?.checkout !== false) {
@@ -3329,13 +3609,32 @@ function maybeTrackPixel(eventName, payload = {}) {
         firePixelEvent('AddToCart', {
             content_name: 'upsell_frete_1dia',
             currency: 'BRL',
-            value: 18.98
+            value: totalValue > 0 ? totalValue : 18.98
         });
+    }
+
+    if ((eventName === 'pix_created_front' || eventName === 'upsell_pix_created_front') && pixel.events?.checkout !== false) {
+        firePixelEvent('AddPaymentInfo', {
+            currency: 'BRL',
+            ...(totalValue > 0 ? { value: totalValue } : {}),
+            content_name: String(payload?.shipping?.name || '')
+        }, txid ? { eventID: txid } : {});
+    }
+
+    if (eventName === 'pix_paid' && pixel.events?.purchase !== false) {
+        firePixelEvent('Purchase', {
+            currency: 'BRL',
+            ...(totalValue > 0 ? { value: totalValue } : {}),
+            content_name: String(payload?.shipping?.name || ''),
+            content_category: payload?.isUpsell ? 'upsell' : 'checkout'
+        }, txid ? { eventID: txid } : {});
     }
 }
 
 function trackLead(eventName, extra = {}) {
     ensureApiSession().catch(() => null);
+    const utm = getUtmData();
+    const pixelBrowser = getPixelBrowserContext(utm);
 
     const payload = {
         sessionId: getLeadSessionId(),
@@ -3343,14 +3642,18 @@ function trackLead(eventName, extra = {}) {
         stage: extra.stage || getStage() || '',
         page: document.body.dataset.page || '',
         sourceUrl: window.location.href,
-        utm: getUtmData(),
+        utm,
+        fbclid: pixelBrowser.fbclid || undefined,
+        fbp: pixelBrowser.fbp || undefined,
+        fbc: pixelBrowser.fbc || undefined,
         personal: extra.personal || loadPersonal() || {},
         address: extra.address || loadAddress() || {},
         extra: extra.extra || loadAddressExtra() || {},
         shipping: extra.shipping || loadShipping() || {},
         bump: extra.bump || loadBump() || {},
         pix: extra.pix || loadPix() || {},
-        amount: Number.isFinite(Number(extra.amount)) ? Number(extra.amount) : undefined
+        amount: Number.isFinite(Number(extra.amount)) ? Number(extra.amount) : undefined,
+        isUpsell: extra.isUpsell === true
     };
 
     maybeTrackPixel(eventName, payload);
