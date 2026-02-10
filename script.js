@@ -178,17 +178,27 @@ function setupGlobalBackRedirect(page) {
     const offerKey = 'ifoodbag.backRedirectShown';
     let allowBack = false;
 
+    const modalEls = ensureCouponModalElements();
+    const modal = modalEls.modal;
+    const btnApply = modalEls.btnApply;
+    const btnExit = modalEls.btnExit;
+    const priceOld = modalEls.priceOld;
+    const priceNew = modalEls.priceNew;
+
+    const shipping = loadShipping();
+    const basePrice = Number(shipping?.originalPrice || shipping?.price || 25.9);
+    const discount = 0.2;
+    const discounted = roundMoney(basePrice * (1 - discount));
+    if (priceOld) priceOld.textContent = formatCurrency(basePrice);
+    if (priceNew) priceNew.textContent = formatCurrency(discounted);
+
     const showCouponModal = () => {
-        const modal = document.getElementById('coupon-modal');
-        if (!modal) return;
         modal.classList.remove('hidden');
         modal.setAttribute('aria-hidden', 'false');
         trackLead('coupon_offer_shown', { stage: page });
     };
 
     const hideCouponModal = () => {
-        const modal = document.getElementById('coupon-modal');
-        if (!modal) return;
         modal.classList.add('hidden');
         modal.setAttribute('aria-hidden', 'true');
     };
@@ -212,9 +222,6 @@ function setupGlobalBackRedirect(page) {
     history.pushState({}, '', location.href);
     window.addEventListener('popstate', handlePop);
 
-    const btnApply = document.getElementById('btn-coupon-apply');
-    const btnExit = document.getElementById('btn-coupon-exit');
-
     if (btnApply) {
         btnApply.addEventListener('click', () => {
             saveCoupon({ code: 'FRETE20', discount: 0.2, appliedAt: Date.now() });
@@ -233,6 +240,38 @@ function setupGlobalBackRedirect(page) {
             history.back();
         });
     }
+}
+
+function ensureCouponModalElements() {
+    let modal = document.getElementById('coupon-modal');
+    if (!modal) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+            <div id="coupon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="coupon-title">
+                <div class="modal-card">
+                    <span class="modal-badge">Cupom exclusivo</span>
+                    <h3 id="coupon-title">Desconto liberado no frete</h3>
+                    <p>Você ganhou 20% OFF no frete da Bag. Aproveite agora para pagar mais barato.</p>
+                    <div class="coupon-prices">
+                        <span id="coupon-old" class="price-old">R$ 25,90</span>
+                        <span id="coupon-new" class="price-new">R$ 20,72</span>
+                    </div>
+                    <button id="btn-coupon-apply" class="btn-primary" type="button">Usar cupom e pagar mais barato</button>
+                    <button id="btn-coupon-exit" class="btn-secondary" type="button">Sair mesmo assim</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(wrapper.firstElementChild);
+        modal = document.getElementById('coupon-modal');
+    }
+
+    return {
+        modal,
+        btnApply: document.getElementById('btn-coupon-apply'),
+        btnExit: document.getElementById('btn-coupon-exit'),
+        priceOld: document.getElementById('coupon-old'),
+        priceNew: document.getElementById('coupon-new')
+    };
 }
 
 function cacheCommonDom() {
@@ -1407,11 +1446,12 @@ function initPix() {
 }
 
 function setupBackRedirectCoupon(shipping) {
-    const modal = document.getElementById('coupon-modal');
-    const btnApply = document.getElementById('btn-coupon-apply');
-    const btnExit = document.getElementById('btn-coupon-exit');
-    const priceOld = document.getElementById('coupon-old');
-    const priceNew = document.getElementById('coupon-new');
+    const modalEls = ensureCouponModalElements();
+    const modal = modalEls.modal;
+    const btnApply = modalEls.btnApply;
+    const btnExit = modalEls.btnExit;
+    const priceOld = modalEls.priceOld;
+    const priceNew = modalEls.priceNew;
 
     if (!modal || !btnApply || !btnExit) return;
 
