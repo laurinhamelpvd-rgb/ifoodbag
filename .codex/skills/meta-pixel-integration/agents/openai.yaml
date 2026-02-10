@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meta Pixel Integration"
+  short_description: "Implementar Pixel Meta em ofertas, sites, SaaS e checkout"
+  default_prompt: "Use $meta-pixel-integration para implementar ou corrigir o Meta Pixel no meu funil."

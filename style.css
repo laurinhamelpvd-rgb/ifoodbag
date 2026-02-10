@@ -824,6 +824,79 @@ body[data-page='orderbump'] .step {
     padding: clamp(16px, 3.6vw, 28px) 10px;
 }
 
+/* Upsell */
+.upsell-step {
+    max-width: 700px;
+}
+
+.upsell-title {
+    margin-top: 6px;
+    margin-bottom: 10px;
+}
+
+.upsell-subtitle {
+    margin: 0 auto 14px;
+    max-width: 34rem;
+    color: #5f5f5f;
+    font-size: 1rem;
+}
+
+.upsell-summary {
+    width: 100%;
+    background: #fff;
+    border: 1px solid #efefef;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    text-align: left;
+}
+
+.upsell-summary__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 0.95rem;
+    color: #595959;
+}
+
+.upsell-summary__row strong {
+    color: #1f1f1f;
+    font-size: 1rem;
+}
+
+.upsell-summary__row--highlight {
+    border-top: 1px dashed #ececec;
+    padding-top: 10px;
+}
+
+.upsell-summary__row--highlight strong {
+    color: var(--primary-color);
+    font-size: 1.12rem;
+}
+
+.upsell-image-slot {
+    width: 100%;
+    min-height: 240px;
+    border-radius: var(--radius-md);
+    border: 2px dashed #e5e5e5;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(234, 29, 44, 0.08), transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(0, 0, 0, 0.06), transparent 45%),
+        #ffffff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body[data-page='upsell'] .step {
+    gap: 14px;
+}
+
+body[data-page='upsell'] .action-stack {
+    margin-top: 2px;
+}
+
 .verified-icon {
     width: 52px;
     height: 52px;
@@ -2407,5 +2480,9 @@ body[data-page='admin'][data-admin='leads'] .admin-topbar {
     .modal-card {
         border-radius: 20px;
         padding: 20px 16px;
+    }
+
+    .upsell-image-slot {
+        min-height: 190px;
     }
 }

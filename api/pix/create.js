@@ -199,7 +199,7 @@ module.exports = async (req, res) => {
                 bump,
                 utm: rawBody.utm || {},
                 txid,
-                createdAt: Date.now(),
+                createdAt: pixCreatedAt,
                 status: 'waiting_payment'
             }
         };

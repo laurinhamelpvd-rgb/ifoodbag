@@ -66,6 +66,10 @@ app.get('/admin/leads', (_req, res) => {
     res.sendFile(path.join(__dirname, 'admin-leads.html'));
 });
 
+app.get('/upsell', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'upsell.html'));
+});
+
 app.post('/api/admin/utmfy-test', async (req, res) => {
     if (!ensureAllowedRequest(req, res, { requireSession: false })) {
         return;
@@ -335,25 +339,34 @@ app.post('/api/pix/create', async (req, res) => {
             });
         }
 
+        const txid = data.idTransaction || data.idtransaction || '';
+        const pixCreatedAt = new Date().toISOString();
+
         upsertLead({
             ...(req.body || {}),
             event: 'pix_created',
             stage: 'pix',
-            pixTxid: data.idTransaction || data.idtransaction || '',
-            pixAmount: Number(value.toFixed(2))
+            pixTxid: txid,
+            pixAmount: Number(value.toFixed(2)),
+            pixCreatedAt,
+            pixStatusChangedAt: pixCreatedAt
         }, req).catch(() => null);
 
         sendUtmfy('pix_created', {
+            orderId: req.body?.sessionId || '',
+            txid,
             amount: Number(value.toFixed(2)),
             sessionId: req.body?.sessionId || '',
             personal,
             shipping,
             bump: req.body?.bump || null,
-            utm: req.body?.utm || {}
+            utm: req.body?.utm || {},
+            createdAt: pixCreatedAt,
+            status: 'waiting_payment'
         }).catch(() => null);
 
         return res.json({
-            idTransaction: data.idTransaction || data.idtransaction,
+            idTransaction: txid,
             paymentCode: data.paymentCode || data.paymentcode,
             paymentCodeBase64: data.paymentCodeBase64 || data.paymentcodebase64,
             status: data.status_transaction || data.status || '',
@@ -551,6 +564,11 @@ app.get('/api/admin/pages', async (req, res) => {
 
     const data = await response.json().catch(() => []);
     res.json({ data });
+});
+
+app.post('/api/pix/status', (req, res) => {
+    const handler = require('./api/pix/status');
+    return handler(req, res);
 });
 
 app.get('/api/admin/backredirects', async (req, res) => {

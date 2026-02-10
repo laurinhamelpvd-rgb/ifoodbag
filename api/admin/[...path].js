@@ -524,6 +524,46 @@ async function me(req, res) {
     res.status(200).json({ ok: true });
 }
 
+function normalizePushcutUrls(urls = []) {
+    const seen = new Set();
+    const out = [];
+    for (const raw of urls) {
+        const url = String(raw || '').trim();
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        out.push(url);
+    }
+    return out.slice(0, 2);
+}
+
+function buildPushcutConfig(raw = {}) {
+    const createdUrls = normalizePushcutUrls([
+        ...(Array.isArray(raw.pixCreatedUrls) ? raw.pixCreatedUrls : []),
+        raw.pixCreatedUrl,
+        raw.pixCreatedUrl2
+    ]);
+    const confirmedUrls = normalizePushcutUrls([
+        ...(Array.isArray(raw.pixConfirmedUrls) ? raw.pixConfirmedUrls : []),
+        raw.pixConfirmedUrl,
+        raw.pixConfirmedUrl2
+    ]);
+
+    return {
+        ...defaultSettings.pushcut,
+        ...raw,
+        pixCreatedUrl: createdUrls[0] || '',
+        pixCreatedUrl2: createdUrls[1] || '',
+        pixCreatedUrls: createdUrls,
+        pixConfirmedUrl: confirmedUrls[0] || '',
+        pixConfirmedUrl2: confirmedUrls[1] || '',
+        pixConfirmedUrls: confirmedUrls,
+        templates: {
+            ...defaultSettings.pushcut.templates,
+            ...(raw.templates || {})
+        }
+    };
+}
+
 async function settings(req, res) {
     if (req.method === 'GET') {
         if (!requireAdmin(req, res)) return;
@@ -562,14 +602,7 @@ async function settings(req, res) {
                 ...defaultSettings.utmfy,
                 ...(body.utmfy || {})
             },
-            pushcut: {
-                ...defaultSettings.pushcut,
-                ...(body.pushcut || {}),
-                templates: {
-                    ...defaultSettings.pushcut.templates,
-                    ...(body.pushcut?.templates || {})
-                }
-            },
+            pushcut: buildPushcutConfig(body.pushcut || {}),
             features: {
                 ...defaultSettings.features,
                 ...(body.features || {})
@@ -671,7 +704,17 @@ async function pushcutTest(req, res) {
         res.status(400).json({ ok: false, error: 'Pushcut desativado.' });
         return;
     }
-    if (!String(cfg.pixCreatedUrl || '').trim() && !String(cfg.pixConfirmedUrl || '').trim()) {
+    const hasCreated = normalizePushcutUrls([
+        ...(Array.isArray(cfg.pixCreatedUrls) ? cfg.pixCreatedUrls : []),
+        cfg.pixCreatedUrl,
+        cfg.pixCreatedUrl2
+    ]).length > 0;
+    const hasConfirmed = normalizePushcutUrls([
+        ...(Array.isArray(cfg.pixConfirmedUrls) ? cfg.pixConfirmedUrls : []),
+        cfg.pixConfirmedUrl,
+        cfg.pixConfirmedUrl2
+    ]).length > 0;
+    if (!hasCreated && !hasConfirmed) {
         res.status(400).json({ ok: false, error: 'Configure ao menos uma URL de Pushcut.' });
         return;
     }

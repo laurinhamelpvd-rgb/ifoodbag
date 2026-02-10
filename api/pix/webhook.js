@@ -44,6 +44,47 @@ function mergeLeadPayload(basePayload, patch) {
     };
 }
 
+function normalizeStatusKey(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+}
+
+function normalizeIso(value) {
+    const parsed = normalizeAtivusDate(value);
+    return parsed || '';
+}
+
+function buildWebhookSignature({ txid, orderId, statusRaw, statusChangedAt }) {
+    return [
+        String(txid || orderId || '').trim(),
+        normalizeStatusKey(statusRaw),
+        normalizeIso(statusChangedAt)
+    ].join('|');
+}
+
+function isDuplicateForLead(leadData, { webhookSignature, statusRaw, statusChangedAt, lastEvent }) {
+    if (!leadData || !webhookSignature) return false;
+    const payload = asObject(leadData.payload);
+    if (String(payload.lastWebhookSignature || '') === webhookSignature) return true;
+
+    const currentStatus = normalizeStatusKey(payload.pixStatus);
+    const incomingStatus = normalizeStatusKey(statusRaw);
+    const currentChangedAt = normalizeIso(payload.pixStatusChangedAt);
+    const incomingChangedAt = normalizeIso(statusChangedAt);
+    const currentEvent = String(leadData.last_event || '').trim().toLowerCase();
+    const incomingEvent = String(lastEvent || '').trim().toLowerCase();
+
+    return (
+        currentStatus &&
+        currentStatus === incomingStatus &&
+        currentChangedAt &&
+        currentChangedAt === incomingChangedAt &&
+        currentEvent === incomingEvent
+    );
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.status(405).json({ status: 'method_not_allowed' });
@@ -115,6 +156,20 @@ module.exports = async (req, res) => {
         normalizeAtivusDate(body?.data_transacao) ||
         null;
     const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
+    const webhookSignature = buildWebhookSignature({
+        txid,
+        orderId: sessionOrderId,
+        statusRaw,
+        statusChangedAt
+    });
+
+    let previousLastEvent = '';
+    let previousEventCaptured = false;
+    const rememberPreviousEvent = (lead) => {
+        if (previousEventCaptured || !lead) return;
+        previousEventCaptured = true;
+        previousLastEvent = String(lead.last_event || '').trim().toLowerCase();
+    };
 
     let leadData = null;
     if (txid) {
@@ -124,6 +179,12 @@ module.exports = async (req, res) => {
             const bySessionBefore = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
             leadData = bySessionBefore?.ok ? bySessionBefore.data : null;
         }
+        rememberPreviousEvent(leadData);
+
+        if (isDuplicateForLead(leadData, { webhookSignature, statusRaw, statusChangedAt, lastEvent })) {
+            res.status(200).json({ status: 'duplicate_ignored' });
+            return;
+        }
 
         const payloadPatch = mergeLeadPayload(leadData?.payload, {
             pixTxid: txid,
@@ -132,7 +193,8 @@ module.exports = async (req, res) => {
             pixCreatedAt: asObject(leadData?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadData?.created_at || undefined,
             pixPaidAt: isPaid ? statusChangedAt : undefined,
             pixRefundedAt: isRefunded ? statusChangedAt : undefined,
-            pixRefusedAt: isRefused ? statusChangedAt : undefined
+            pixRefusedAt: isRefused ? statusChangedAt : undefined,
+            lastWebhookSignature: webhookSignature || undefined
         });
         const upByTx = await updateLeadByPixTxid(txid, {
             last_event: lastEvent,
@@ -148,7 +210,8 @@ module.exports = async (req, res) => {
                 pixCreatedAt: asObject(bySessionBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || bySessionBefore?.created_at || undefined,
                 pixPaidAt: isPaid ? statusChangedAt : undefined,
                 pixRefundedAt: isRefunded ? statusChangedAt : undefined,
-                pixRefusedAt: isRefused ? statusChangedAt : undefined
+                pixRefusedAt: isRefused ? statusChangedAt : undefined,
+                lastWebhookSignature: webhookSignature || undefined
             });
             await updateLeadBySessionId(sessionOrderId, {
                 last_event: lastEvent,
@@ -162,16 +225,23 @@ module.exports = async (req, res) => {
             const bySessionAfter = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
             leadData = bySessionAfter?.ok ? bySessionAfter.data : null;
         }
+        rememberPreviousEvent(leadData);
     } else if (sessionOrderId) {
         const bySessionBefore = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
         const leadBefore = bySessionBefore?.ok ? bySessionBefore.data : null;
+        rememberPreviousEvent(leadBefore);
+        if (isDuplicateForLead(leadBefore, { webhookSignature, statusRaw, statusChangedAt, lastEvent })) {
+            res.status(200).json({ status: 'duplicate_ignored' });
+            return;
+        }
         const payloadPatch = mergeLeadPayload(leadBefore?.payload, {
             pixStatus: statusRaw || null,
             pixStatusChangedAt: statusChangedAt,
             pixCreatedAt: asObject(leadBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadBefore?.created_at || undefined,
             pixPaidAt: isPaid ? statusChangedAt : undefined,
             pixRefundedAt: isRefunded ? statusChangedAt : undefined,
-            pixRefusedAt: isRefused ? statusChangedAt : undefined
+            pixRefusedAt: isRefused ? statusChangedAt : undefined,
+            lastWebhookSignature: webhookSignature || undefined
         });
         await updateLeadBySessionId(sessionOrderId, {
             last_event: lastEvent,
@@ -180,6 +250,7 @@ module.exports = async (req, res) => {
         }).catch(() => ({ ok: false, count: 0 }));
         const bySession = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
         leadData = bySession?.ok ? bySession.data : null;
+        rememberPreviousEvent(leadData);
     }
 
     if (!leadData) {
@@ -190,6 +261,11 @@ module.exports = async (req, res) => {
         }).catch(() => ({ ok: false, data: null }));
         if (byIdentity?.ok && byIdentity?.data) {
             leadData = byIdentity.data;
+            rememberPreviousEvent(leadData);
+            if (isDuplicateForLead(leadData, { webhookSignature, statusRaw, statusChangedAt, lastEvent })) {
+                res.status(200).json({ status: 'duplicate_ignored' });
+                return;
+            }
             const payloadPatch = mergeLeadPayload(leadData?.payload, {
                 pixTxid: txid || asObject(leadData?.payload).pixTxid || undefined,
                 pixStatus: statusRaw || null,
@@ -197,7 +273,8 @@ module.exports = async (req, res) => {
                 pixCreatedAt: asObject(leadData?.payload).pixCreatedAt || pixCreatedAtFromGateway || leadData?.created_at || undefined,
                 pixPaidAt: isPaid ? statusChangedAt : undefined,
                 pixRefundedAt: isRefunded ? statusChangedAt : undefined,
-                pixRefusedAt: isRefused ? statusChangedAt : undefined
+                pixRefusedAt: isRefused ? statusChangedAt : undefined,
+                lastWebhookSignature: webhookSignature || undefined
             });
             await updateLeadBySessionId(leadData.session_id, {
                 last_event: lastEvent,
@@ -220,8 +297,10 @@ module.exports = async (req, res) => {
 
     const eventName = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_failed' : 'pix_created';
     const dedupeBase = txid || orderId || 'unknown';
+    const shouldSendUtmStatus = Boolean(orderId || txid) && previousLastEvent !== lastEvent;
+    const shouldTriggerPaidSideEffects = Boolean(isPaid && txid) && previousLastEvent !== 'pix_confirmed';
 
-    if (orderId || txid) {
+    if (shouldSendUtmStatus) {
         const utmPayload = {
             event: 'pix_status',
             orderId,
@@ -273,9 +352,9 @@ module.exports = async (req, res) => {
             payload: body,
             client_ip: clientIp,
             user_agent: userAgent,
-            createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at || body?.data_registro || body?.data_transacao || Date.now(),
-            approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || body?.data_registro || body?.data_transacao || Date.now()) : null,
-            refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || body?.data_registro || body?.data_transacao || Date.now()) : null,
+            createdAt: leadData?.payload?.pixCreatedAt || leadData?.created_at || body?.data_registro || body?.data_transacao || statusChangedAt,
+            approvedDate: isPaid ? (leadData?.payload?.pixPaidAt || body?.data_registro || body?.data_transacao || statusChangedAt) : null,
+            refundedAt: isRefunded ? (leadData?.payload?.pixRefundedAt || body?.data_registro || body?.data_transacao || statusChangedAt) : null,
             gatewayFeeInCents: Math.round(gatewayFee * 100),
             userCommissionInCents: Math.round(userCommission * 100),
             totalPriceInCents: Math.round(amount * 100)
@@ -299,7 +378,7 @@ module.exports = async (req, res) => {
         }
     }
 
-    if (isPaid && txid) {
+    if (shouldTriggerPaidSideEffects) {
         const orderIdForPush = String(
             leadData?.session_id ||
             sessionOrderId ||

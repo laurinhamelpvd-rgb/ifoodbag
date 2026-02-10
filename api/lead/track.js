@@ -52,24 +52,29 @@ module.exports = async (req, res) => {
         };
 
         if (fullPayload.event === 'checkout_submit') {
-            const checkoutPayload = {
-                ...fullPayload,
-                orderId: fullPayload.sessionId || '',
-                createdAt: Date.now(),
-                status: 'waiting_payment'
-            };
-            const utmImmediate = await sendUtmfy('checkout', checkoutPayload).catch((error) => ({
-                ok: false,
-                reason: error?.message || 'utmfy_immediate_error'
-            }));
+            const orderId = String(fullPayload.sessionId || '').trim();
+            const createdAt = body.createdAt || body.pixCreatedAt || new Date().toISOString();
+            if (orderId) {
+                const checkoutPayload = {
+                    ...fullPayload,
+                    orderId,
+                    createdAt,
+                    status: 'waiting_payment'
+                };
+                const utmImmediate = await sendUtmfy('checkout', checkoutPayload).catch((error) => ({
+                    ok: false,
+                    reason: error?.message || 'utmfy_immediate_error'
+                }));
 
-            if (!utmImmediate?.ok) {
-                await enqueueDispatch({
-                channel: 'utmfy',
-                eventName: 'checkout',
-                payload: checkoutPayload
-                }).catch(() => null);
-                await processDispatchQueue(12).catch(() => null);
+                if (!utmImmediate?.ok) {
+                    await enqueueDispatch({
+                        channel: 'utmfy',
+                        eventName: 'checkout',
+                        dedupeKey: `utmfy:checkout:${orderId}:waiting_payment`,
+                        payload: checkoutPayload
+                    }).catch(() => null);
+                    await processDispatchQueue(12).catch(() => null);
+                }
             }
         }
 

