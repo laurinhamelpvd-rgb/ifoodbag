@@ -1,7 +1,5 @@
 const { upsertLead } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
-const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
-const { sendUtmfy } = require('../../lib/utmfy');
 
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -50,53 +48,6 @@ module.exports = async (req, res) => {
             },
             raw: body
         };
-
-        if (fullPayload.event === 'checkout_submit') {
-            const orderId = String(fullPayload.sessionId || '').trim();
-            const createdAt = body.createdAt || body.pixCreatedAt || new Date().toISOString();
-            if (orderId) {
-                const shippingAmount = Number(fullPayload?.shipping?.price || 0);
-                const bumpPriceRaw = Number(fullPayload?.bump?.price || 0);
-                const bumpSelected = fullPayload?.bump?.selected === true && bumpPriceRaw > 0;
-                const safeBump = bumpSelected
-                    ? {
-                        ...fullPayload.bump,
-                        selected: true,
-                        price: bumpPriceRaw
-                    }
-                    : {
-                        selected: false,
-                        price: 0,
-                        title: 'Seguro Bag'
-                    };
-                const postedAmount = Number(fullPayload.amount);
-                const normalizedAmount = Number.isFinite(postedAmount) && postedAmount > 0
-                    ? postedAmount
-                    : Number((Math.max(0, shippingAmount) + (bumpSelected ? bumpPriceRaw : 0)).toFixed(2));
-                const checkoutPayload = {
-                    ...fullPayload,
-                    orderId,
-                    amount: normalizedAmount,
-                    bump: safeBump,
-                    createdAt,
-                    status: 'waiting_payment'
-                };
-                const utmImmediate = await sendUtmfy('checkout', checkoutPayload).catch((error) => ({
-                    ok: false,
-                    reason: error?.message || 'utmfy_immediate_error'
-                }));
-
-                if (!utmImmediate?.ok) {
-                    await enqueueDispatch({
-                        channel: 'utmfy',
-                        eventName: 'checkout',
-                        dedupeKey: `utmfy:checkout:${orderId}:waiting_payment`,
-                        payload: checkoutPayload
-                    }).catch(() => null);
-                    await processDispatchQueue(12).catch(() => null);
-                }
-            }
-        }
 
         const result = await upsertLead(body, req);
 

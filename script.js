@@ -210,6 +210,7 @@ function setupGlobalBackRedirect(page) {
     let shownOfferLevel = 0;
     let backAttemptTracked = false;
     let backAttemptAt = 0;
+    let orderbumpBackInFlight = false;
     const guardDepth = 12;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const stateBase = { ifb: true, token: guardToken };
@@ -220,6 +221,15 @@ function setupGlobalBackRedirect(page) {
         secondOffer.mode === 'coupon' &&
         Number(secondOffer.amountOff || 0) > Number(firstOffer.amountOff || 0)
     );
+    if (canEscalateOffer) {
+        const currentCoupon = loadCoupon();
+        const currentAmountOff = Number(currentCoupon?.amountOff || 0) || roundMoney(25.9 * Number(currentCoupon?.discount || 0));
+        if (currentAmountOff >= Number(secondOffer.amountOff || 0)) {
+            shownOfferLevel = 2;
+        } else if (currentAmountOff >= Number(firstOffer.amountOff || 0)) {
+            shownOfferLevel = 1;
+        }
+    }
     let activeOffer = firstOffer;
     let lastGuardAt = 0;
     const currentHash = window.location.hash || '';
@@ -310,6 +320,31 @@ function setupGlobalBackRedirect(page) {
         ensureGuardEntry(true);
         markBackAttempt();
 
+        if (page === 'orderbump') {
+            if (orderbumpBackInFlight) return;
+            const shipping = loadShipping();
+            if (!shipping) {
+                redirect(resolveTargetUrl());
+                return;
+            }
+
+            orderbumpBackInFlight = true;
+            saveBump({
+                selected: false,
+                price: 0,
+                title: 'Seguro Bag'
+            });
+            trackLead('orderbump_back_skip', { stage: 'orderbump', shipping });
+            showToast('Gerando pagamento...', 'success');
+
+            createPixCharge(shipping, 0, { sourceStage: 'orderbump_back_direct' })
+                .catch((error) => {
+                    orderbumpBackInFlight = false;
+                    showToast(error?.message || 'Erro ao gerar o PIX.', 'error');
+                });
+            return;
+        }
+
         if (shownOfferLevel >= 1 && (!canEscalateOffer || shownOfferLevel >= 2)) {
             redirect(resolveTargetUrl());
             return;
@@ -385,7 +420,9 @@ function setupGlobalBackRedirect(page) {
 
     if (btnApply) {
         btnApply.addEventListener('click', async () => {
+            if (btnApply.disabled) return;
             let copiedPix = false;
+            const originalCta = btnApply.textContent;
             if (activeOffer.mode === 'pix-copy') {
                 copiedPix = await copyPixCodeFromField();
             } else if (activeOffer.mode === 'coupon') {
@@ -400,6 +437,55 @@ function setupGlobalBackRedirect(page) {
                     backOfferLevel: shownOfferLevel || 1
                 });
                 sessionStorage.setItem(STORAGE_KEYS.directCheckout, '1');
+
+                if (page === 'pix') {
+                    const pix = loadPix();
+                    const isUpsellPix = Boolean(pix?.isUpsell || pix?.upsell?.enabled);
+                    if (!isUpsellPix) {
+                        const shippingStored = loadShipping();
+                        const shippingWithCoupon = applyCouponToShipping(shippingStored);
+                        const bump = loadBump() || {};
+                        const bumpSelected = bump?.selected === true && Number(bump?.price || 0) > 0;
+                        const bumpPrice = bumpSelected ? Number(bump.price || 0) : 0;
+                        const fallbackShippingBase = Math.max(0, Number((Number(pix?.amount || 0) - bumpPrice).toFixed(2)));
+                        const shippingForRegeneration = shippingWithCoupon || (
+                            shippingStored
+                                ? applyCouponToShipping({
+                                    ...shippingStored,
+                                    basePrice: Number(shippingStored.basePrice || shippingStored.originalPrice || shippingStored.price || 0),
+                                    originalPrice: Number(shippingStored.originalPrice || shippingStored.basePrice || shippingStored.price || 0)
+                                })
+                                : null
+                        ) || (
+                            pix
+                                ? applyCouponToShipping({
+                                    id: String(pix?.shippingId || 'padrao'),
+                                    name: String(pix?.shippingName || 'Envio Padrão iFood'),
+                                    eta: '',
+                                    price: fallbackShippingBase,
+                                    basePrice: fallbackShippingBase,
+                                    originalPrice: fallbackShippingBase
+                                })
+                                : null
+                        );
+
+                        if (shippingForRegeneration) {
+                            btnApply.disabled = true;
+                            btnApply.textContent = 'Gerando novo PIX...';
+                            try {
+                                trackLead(activeOffer.acceptEvent, { stage: page, copiedPix, backOfferLevel: shownOfferLevel || 1 });
+                                setStage('checkout');
+                                await createPixCharge(shippingForRegeneration, bumpPrice, { sourceStage: 'backredirect_pix_coupon' });
+                                return;
+                            } catch (error) {
+                                showToast(error?.message || 'Nao foi possivel gerar um novo PIX com desconto agora.', 'error');
+                                btnApply.disabled = false;
+                                btnApply.textContent = originalCta;
+                                return;
+                            }
+                        }
+                    }
+                }
             }
             hideCouponModal();
             trackLead(activeOffer.acceptEvent, { stage: page, copiedPix, backOfferLevel: shownOfferLevel || 1 });
@@ -435,8 +521,8 @@ function getBackRedirectOffer(page, level = 1) {
         return {
             mode: 'coupon',
             badge: 'Ultima chance',
-            title: 'Liberamos R$ 10,00 de desconto no frete',
-            message: 'Voce clicou em voltar de novo. Ativamos um cupom maior para concluir agora.',
+            title: 'Tem certeza que nao quer R$ 10,00 de desconto?',
+            message: 'Aplicamos mais R$ 5,00 e seu desconto total no frete agora e de R$ 10,00.',
             subtitle: 'Cupom de R$ 10 valido apenas nesta sessao',
             cta: 'Usar cupom de R$ 10 agora',
             shownEvent: 'coupon_offer_boost_shown',
@@ -449,8 +535,8 @@ function getBackRedirectOffer(page, level = 1) {
         return {
             mode: 'coupon',
             badge: 'Pagamento pendente',
-            title: 'Finalize agora e ganhe R$ 5,00 no frete',
-            message: 'Seu PIX ainda esta pendente. Liberamos um cupom para concluir agora sem perder prioridade.',
+            title: 'Volte agora e pague R$ 5,00 a menos no frete',
+            message: 'Seu PIX ainda esta pendente. Vamos reduzir R$ 5,00 no frete e gerar um novo PIX com desconto.',
             subtitle: 'Oferta valida apenas nesta sessao',
             cta: 'Usar cupom de R$ 5 agora',
             shownEvent: 'coupon_offer_shown',
@@ -2359,10 +2445,16 @@ function initPix() {
 
 function buildBackRedirectUrl(pageOverride) {
     const params = new URLSearchParams(window.location.search || '');
-    const directCheckoutUrl = () => {
+    const withDirectMode = (basePath) => {
         params.set('dc', '1');
         const query = params.toString();
-        return `checkout.html${query ? `?${query}` : ''}`;
+        return `${basePath}${query ? `?${query}` : ''}`;
+    };
+    const directCheckoutUrl = () => {
+        return withDirectMode('checkout.html');
+    };
+    const directProcessingUrl = () => {
+        return withDirectMode('processando.html');
     };
 
     const page = pageOverride || document.body?.dataset?.page || '';
@@ -2372,37 +2464,39 @@ function buildBackRedirectUrl(pageOverride) {
     const pix = loadPix();
     const pixPaid = isPixPaid(pix);
     const pixPending = !!pix && !pixPaid;
-    const canOpenVsl = !!(
+    const hasPersonalCore = !!(
         personal?.name &&
         personal?.cpf &&
         personal?.birth &&
         personal?.email &&
-        personal?.phone &&
-        address
+        personal?.phone
     );
-    if (!isVslCompleted() && page === 'processing') {
-        return 'processando.html';
+    const hasAddress = !!address;
+    const canOpenVsl = hasPersonalCore && hasAddress;
+    const mustShowVslFirst = !isVslCompleted();
+
+    if (mustShowVslFirst) {
+        return canOpenVsl ? 'processando.html' : directProcessingUrl();
     }
-    const vslRequiredPages = new Set(['home', 'quiz', 'personal', 'cep', 'success', 'checkout', 'orderbump', 'pix', 'upsell']);
-    if (!isVslCompleted() && canOpenVsl && vslRequiredPages.has(page)) {
-        return 'processando.html';
-    }
+
     if (pixPending) {
         return 'pix.html';
     }
-    if (pixPaid && page !== 'upsell') {
+    if (pixPaid) {
         return 'upsell.html';
-    }
-    if (shipping && !pixPending && page !== 'upsell' && page !== 'orderbump') {
-        return 'orderbump.html';
     }
 
     switch (page) {
         case 'home':
+            return 'quiz.html';
         case 'quiz':
+            return hasPersonalCore ? (hasAddress ? directCheckoutUrl() : 'endereco.html') : 'dados.html';
         case 'personal':
+            return hasAddress ? directCheckoutUrl() : 'endereco.html';
         case 'cep':
+            return hasAddress ? directCheckoutUrl() : 'endereco.html';
         case 'processing':
+            return 'sucesso.html';
         case 'success':
             return directCheckoutUrl();
         case 'checkout':
@@ -2410,12 +2504,12 @@ function buildBackRedirectUrl(pageOverride) {
             return directCheckoutUrl();
         case 'orderbump':
             if (pixPending) return 'pix.html';
-            if (shipping) return 'checkout.html';
+            if (shipping) return 'orderbump.html';
             return directCheckoutUrl();
         case 'pix':
             return pixPending ? 'pix.html' : directCheckoutUrl();
         case 'upsell':
-            return pixPending ? 'pix.html' : 'upsell.html';
+            return 'upsell.html';
         default:
             if (pixPending) return 'pix.html';
             if (shipping) return 'orderbump.html';
