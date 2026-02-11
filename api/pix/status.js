@@ -68,6 +68,126 @@ function normalizeStatus(value) {
         .replace(/-+/g, '_');
 }
 
+function pickText(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+    }
+    return '';
+}
+
+function looksLikePixCopyPaste(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (text.startsWith('000201') && text.length >= 30) return true;
+    return /br\.gov\.bcb\.pix/i.test(text);
+}
+
+function extractPixFieldsForStatus(gateway, payload = {}) {
+    const root = asObject(payload);
+    const nested = asObject(root.data);
+    const transaction = asObject(root.transaction);
+    const payment = asObject(root.payment);
+    const pix = asObject(
+        root.pix ||
+        nested.pix ||
+        transaction.pix ||
+        payment.pix
+    );
+
+    const isGhost = gateway === 'ghostspay';
+    const isSunize = gateway === 'sunize';
+    let paymentCode = '';
+    let qrRaw = '';
+    let paymentQrUrl = '';
+
+    if (isGhost) {
+        paymentCode = pickText(
+            pix.qrcodeText,
+            pix.qrCodeText,
+            pix.copyPaste,
+            pix.copy_paste,
+            pix.emv,
+            pix.payload,
+            pix.pixCode,
+            pix.pix_code,
+            root.paymentCode,
+            nested.paymentCode,
+            root.copyPaste,
+            nested.copyPaste
+        );
+        qrRaw = pickText(
+            pix.qrcode,
+            pix.qrCode,
+            pix.qrcodeImage,
+            pix.qrCodeImage,
+            pix.qrcodeBase64,
+            pix.qrCodeBase64,
+            pix.qr_code_base64,
+            pix.image,
+            pix.imageBase64,
+            root.qrcode,
+            nested.qrcode,
+            root.qrCode,
+            nested.qrCode
+        );
+        paymentQrUrl = pickText(
+            pix.qrcodeUrl,
+            pix.qrCodeUrl,
+            pix.qrcode_url,
+            pix.qr_code_url,
+            root.qrcodeUrl,
+            nested.qrcodeUrl
+        );
+    } else if (isSunize) {
+        paymentCode = pickText(
+            pix.payload,
+            pix.copyPaste,
+            pix.copy_paste,
+            root.pixPayload,
+            nested.pixPayload
+        );
+        qrRaw = pickText(
+            pix.qrcode,
+            pix.qrCode,
+            pix.qr_code,
+            pix.qrcodeBase64,
+            pix.qrCodeBase64,
+            pix.qr_code_base64
+        );
+        paymentQrUrl = pickText(
+            pix.qrcode_url,
+            pix.qrCodeUrl,
+            pix.qr_code_url
+        );
+    } else {
+        paymentCode = pickText(root.paymentCode, root.paymentcode, nested.paymentCode, nested.paymentcode);
+        qrRaw = pickText(root.paymentCodeBase64, root.paymentcodebase64, nested.paymentCodeBase64, nested.paymentcodebase64);
+        paymentQrUrl = pickText(root.paymentQrUrl, nested.paymentQrUrl);
+    }
+
+    if (!paymentCode && looksLikePixCopyPaste(qrRaw)) {
+        paymentCode = qrRaw;
+        qrRaw = '';
+    }
+
+    let paymentCodeBase64 = '';
+    if (!paymentQrUrl && qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+
+    return {
+        paymentCode,
+        paymentCodeBase64,
+        paymentQrUrl
+    };
+}
+
 function mapUtmifyStatusToFrontend(status) {
     const normalized = normalizeStatus(status);
     if (normalized === 'paid') return 'paid';
@@ -245,6 +365,9 @@ module.exports = async (req, res) => {
     let statusRaw = '';
     let changedAtIso = new Date().toISOString();
     let nextStatus = leadStatus.status || 'waiting_payment';
+    let paymentCode = '';
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
 
     if (gateway === 'ghostspay') {
         ({ response, data } = await requestGhostspayStatus(gatewayConfig, txid));
@@ -276,6 +399,7 @@ module.exports = async (req, res) => {
             toIsoDate(data?.paidAt) ||
             toIsoDate(data?.data?.paidAt) ||
             new Date().toISOString();
+        ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
     } else if (gateway === 'sunize') {
         ({ response, data } = await requestSunizeStatus(gatewayConfig, txid));
         if (!response?.ok) {
@@ -306,6 +430,7 @@ module.exports = async (req, res) => {
             toIsoDate(data?.paid_at) ||
             toIsoDate(data?.paidAt) ||
             new Date().toISOString();
+        ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
     } else {
         ({ response, data } = await requestAtivushubStatus(gatewayConfig, txid));
         if (!response?.ok) {
@@ -337,6 +462,7 @@ module.exports = async (req, res) => {
             toIsoDate(data?.data_registro) ||
             toIsoDate(data?.dt_atualizacao) ||
             new Date().toISOString();
+        ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
     }
 
     if (leadData || sessionId) {
@@ -354,6 +480,9 @@ module.exports = async (req, res) => {
         txid,
         gateway,
         changedAt: changedAtIso,
-        source: gateway
+        source: gateway,
+        paymentCode,
+        paymentCodeBase64,
+        paymentQrUrl
     });
 };

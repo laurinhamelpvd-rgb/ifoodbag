@@ -13,6 +13,7 @@ const {
 } = require('../../lib/ativushub-provider');
 const {
     requestCreateTransaction: requestGhostspayCreate,
+    requestTransactionById: requestGhostspayStatus,
     resolvePostbackUrl: resolveGhostspayPostbackUrl
 } = require('../../lib/ghostspay-provider');
 const {
@@ -72,35 +73,100 @@ function resolveDocumentType(document = '') {
     return digits.length > 11 ? 'CNPJ' : 'CPF';
 }
 
+function pickText(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+    }
+    return '';
+}
+
+function asObject(input) {
+    return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+}
+
+function looksLikePixCopyPaste(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (text.startsWith('000201') && text.length >= 30) return true;
+    return /br\.gov\.bcb\.pix/i.test(text);
+}
+
 function resolveGhostspayResponse(data = {}) {
-    const pix = data?.pix || {};
-    const txid = String(
-        data?.id ||
-        data?.transactionId ||
-        data?.transaction_id ||
-        data?.data?.id ||
-        data?.data?.transactionId ||
-        ''
-    ).trim();
-    const paymentCode = String(
-        pix?.qrcodeText ||
-        pix?.qrCodeText ||
-        pix?.copyPaste ||
-        pix?.emv ||
-        data?.paymentCode ||
-        ''
-    ).trim();
-    const qrRaw = String(
-        pix?.qrcode ||
-        pix?.qrCode ||
-        pix?.qrcodeImage ||
-        pix?.qrCodeImage ||
-        ''
-    ).trim();
+    const root = asObject(data);
+    const nested = asObject(root.data);
+    const transaction = asObject(root.transaction);
+    const payment = asObject(root.payment);
+    const pix = asObject(
+        root.pix ||
+        nested.pix ||
+        transaction.pix ||
+        payment.pix
+    );
+
+    const txid = pickText(
+        root.id,
+        root.transactionId,
+        root.transaction_id,
+        root.txid,
+        nested.id,
+        nested.transactionId,
+        nested.transaction_id,
+        nested.txid,
+        transaction.id,
+        payment.id,
+        pix.id,
+        pix.txid
+    );
+    let paymentCode = pickText(
+        pix.qrcodeText,
+        pix.qrCodeText,
+        pix.copyPaste,
+        pix.copy_paste,
+        pix.emv,
+        pix.payload,
+        pix.pixCode,
+        pix.pix_code,
+        root.paymentCode,
+        nested.paymentCode,
+        root.copyPaste,
+        nested.copyPaste
+    );
+    let qrRaw = pickText(
+        pix.qrcode,
+        pix.qrCode,
+        pix.qrcodeImage,
+        pix.qrCodeImage,
+        pix.qrcodeBase64,
+        pix.qrCodeBase64,
+        pix.qr_code_base64,
+        pix.image,
+        pix.imageBase64,
+        root.qrcode,
+        nested.qrcode,
+        root.qrCode,
+        nested.qrCode
+    );
+    const qrUrl = pickText(
+        pix.qrcodeUrl,
+        pix.qrCodeUrl,
+        pix.qrcode_url,
+        pix.qr_code_url,
+        root.qrcodeUrl,
+        nested.qrcodeUrl
+    );
+
+    if (!paymentCode && looksLikePixCopyPaste(qrRaw)) {
+        paymentCode = qrRaw;
+        qrRaw = '';
+    }
 
     let paymentCodeBase64 = '';
     let paymentQrUrl = '';
-    if (qrRaw) {
+    if (qrUrl) {
+        paymentQrUrl = qrUrl;
+    } else if (qrRaw) {
         if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
             paymentQrUrl = qrRaw;
         } else {
@@ -108,7 +174,7 @@ function resolveGhostspayResponse(data = {}) {
         }
     }
 
-    const status = String(data?.status || data?.data?.status || '').trim();
+    const status = pickText(root.status, nested.status, transaction.status, payment.status);
     return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status };
 }
 
@@ -315,6 +381,29 @@ module.exports = async (req, res) => {
             paymentCodeBase64 = ghostData.paymentCodeBase64;
             paymentQrUrl = ghostData.paymentQrUrl;
             statusRaw = ghostData.status;
+
+            // Some GhostsPay accounts return PIX details asynchronously; hydrate quickly by txid.
+            if (txid && !paymentCode && !paymentCodeBase64 && !paymentQrUrl) {
+                const quickStatusTimeout = Math.max(
+                    3000,
+                    Math.min(Number(gatewayConfig.timeoutMs || 12000), 6000)
+                );
+                const quickConfig = {
+                    ...gatewayConfig,
+                    timeoutMs: quickStatusTimeout
+                };
+                const quickStatus = await requestGhostspayStatus(quickConfig, txid).catch(() => ({
+                    response: { ok: false },
+                    data: {}
+                }));
+                if (quickStatus?.response?.ok) {
+                    const fromStatus = resolveGhostspayResponse(quickStatus.data || {});
+                    paymentCode = paymentCode || fromStatus.paymentCode;
+                    paymentCodeBase64 = paymentCodeBase64 || fromStatus.paymentCodeBase64;
+                    paymentQrUrl = paymentQrUrl || fromStatus.paymentQrUrl;
+                    statusRaw = statusRaw || fromStatus.status;
+                }
+            }
         } else if (gateway === 'sunize') {
             if (!hasSunizeCredentials(gatewayConfig)) {
                 return res.status(500).json({ error: 'Credenciais Sunize nao configuradas.' });

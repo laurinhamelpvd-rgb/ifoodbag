@@ -1941,13 +1941,19 @@ function initPix() {
     }
     if (pixCode) pixCode.value = pix.paymentCode || '';
 
-    if (pixQr && (pix.paymentQrUrl || pix.paymentCodeBase64)) {
-        const qrSource = String(pix.paymentQrUrl || pix.paymentCodeBase64 || '').trim();
+    const applyPixQrSource = (qrUrl, qrBase64) => {
+        if (!pixQr) return;
+        const qrSource = String(qrUrl || qrBase64 || '').trim();
+        if (!qrSource) return;
         if (/^https?:\/\//i.test(qrSource) || qrSource.startsWith('data:image')) {
             pixQr.src = qrSource;
         } else {
             pixQr.src = `data:image/png;base64,${qrSource}`;
         }
+    };
+
+    if (pixQr && (pix.paymentQrUrl || pix.paymentCodeBase64)) {
+        applyPixQrSource(pix.paymentQrUrl, pix.paymentCodeBase64);
     }
 
     const handleCopy = async (button) => {
@@ -2121,6 +2127,28 @@ function initPix() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) return;
+
+            const nextPaymentCode = String(data?.paymentCode || '').trim();
+            const nextPaymentQrUrl = String(data?.paymentQrUrl || '').trim();
+            const nextPaymentCodeBase64 = String(data?.paymentCodeBase64 || '').trim();
+            const shouldUpdatePix =
+                (!String(pix?.paymentCode || '').trim() && !!nextPaymentCode) ||
+                (!String(pix?.paymentQrUrl || '').trim() && !!nextPaymentQrUrl) ||
+                (!String(pix?.paymentCodeBase64 || '').trim() && !!nextPaymentCodeBase64);
+            if (shouldUpdatePix) {
+                if (nextPaymentCode && pixCode && !String(pixCode.value || '').trim()) {
+                    pixCode.value = nextPaymentCode;
+                }
+                if ((nextPaymentQrUrl || nextPaymentCodeBase64) && pixQr) {
+                    applyPixQrSource(nextPaymentQrUrl, nextPaymentCodeBase64);
+                }
+                Object.assign(pix, {
+                    paymentCode: pix.paymentCode || nextPaymentCode,
+                    paymentQrUrl: pix.paymentQrUrl || nextPaymentQrUrl,
+                    paymentCodeBase64: pix.paymentCodeBase64 || nextPaymentCodeBase64
+                });
+                savePix(pix);
+            }
 
             const status = normalizePixStatus(data?.status);
             if (status === 'paid') {
@@ -3592,7 +3620,7 @@ function getPixAddressPayload() {
 }
 
 async function createPixCharge(shipping, bumpPrice, options = {}) {
-    await ensureApiSession(true);
+    await ensureApiSession();
 
     const extraCharge = Number(bumpPrice || 0);
     const amount = Number((shipping.price + extraCharge).toFixed(2));
