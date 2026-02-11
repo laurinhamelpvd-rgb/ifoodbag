@@ -2358,10 +2358,18 @@ function initAdmin() {
     const processDispatchBtn = document.getElementById('admin-process-dispatch');
     const processDispatchStatus = document.getElementById('admin-process-dispatch-status');
     const featureOrderbump = document.getElementById('feature-orderbump');
+    const quizRefresh = document.getElementById('quiz-refresh');
+    const quizUpdated = document.getElementById('quiz-updated');
+    const quizTotalLeads = document.getElementById('quiz-total-leads');
+    const quizCompletedLeads = document.getElementById('quiz-completed-leads');
+    const quizCompletionRate = document.getElementById('quiz-completion-rate');
+    const quizTotalAnswers = document.getElementById('quiz-total-answers');
+    const quizQuestionsGrid = document.getElementById('quiz-questions-grid');
 
     let offset = 0;
     const limit = 50;
     let loadingLeads = false;
+    let loadingQuizStats = false;
     const metrics = {
         total: 0,
         pix: 0,
@@ -2429,6 +2437,15 @@ function initAdmin() {
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
     const wantsPages = !!pagesGrid;
     const wantsBackredirects = !!backredirectGrid;
+    const wantsQuiz = !!(
+        quizRefresh ||
+        quizUpdated ||
+        quizTotalLeads ||
+        quizCompletedLeads ||
+        quizCompletionRate ||
+        quizTotalAnswers ||
+        quizQuestionsGrid
+    );
 
     const normalizeGatewayKey = (value) => {
         const normalized = String(value || '').trim().toLowerCase();
@@ -2442,6 +2459,16 @@ function initAdmin() {
         if (normalized === 'ghostspay') return 'GhostsPay';
         if (normalized === 'sunize') return 'Sunize';
         return 'AtivusHUB';
+    };
+
+    const formatPercent = (value) => {
+        const numeric = Number(value || 0);
+        if (!Number.isFinite(numeric)) return '0%';
+        const rounded = Math.round(numeric * 10) / 10;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+            return `${Math.round(rounded)}%`;
+        }
+        return `${rounded.toFixed(1)}%`;
     };
 
     const normalizeQuizAnswers = (row = {}) => {
@@ -3250,6 +3277,141 @@ function initAdmin() {
         }
     };
 
+    const renderQuizStatsQuestions = (questions = []) => {
+        if (!quizQuestionsGrid) return;
+        quizQuestionsGrid.innerHTML = '';
+        if (!Array.isArray(questions) || questions.length === 0) {
+            const empty = document.createElement('article');
+            empty.className = 'admin-quiz-card admin-quiz-card--empty';
+            empty.innerHTML = '<h3>Nenhum dado ainda</h3><p>Assim que os leads responderem o quiz, as perguntas aparecem aqui.</p>';
+            quizQuestionsGrid.appendChild(empty);
+            return;
+        }
+
+        questions.forEach((question, index) => {
+            const answeredLeads = Number(question?.answered_leads || 0);
+            const dropCount = Number(question?.drop_from_previous || 0);
+            const dropRate = Number(question?.drop_rate || 0);
+            const responses = Array.isArray(question?.responses) ? question.responses : [];
+
+            const card = document.createElement('article');
+            card.className = 'admin-quiz-card';
+
+            const head = document.createElement('div');
+            head.className = 'admin-quiz-card-head';
+
+            const step = document.createElement('span');
+            step.className = 'admin-quiz-card-step';
+            const stepIndex = Number(question?.step_index || 0);
+            step.textContent = stepIndex > 0 ? `Pergunta ${stepIndex}` : `Pergunta ${index + 1}`;
+            head.appendChild(step);
+
+            const answered = document.createElement('span');
+            answered.className = 'admin-quiz-card-count';
+            answered.textContent = `${answeredLeads} lead${answeredLeads === 1 ? '' : 's'}`;
+            head.appendChild(answered);
+            card.appendChild(head);
+
+            const title = document.createElement('h3');
+            title.className = 'admin-quiz-card-title';
+            title.textContent = String(question?.question_text || '-').trim() || '-';
+            card.appendChild(title);
+
+            if (index > 0) {
+                const drop = document.createElement('div');
+                drop.className = 'admin-quiz-drop';
+                if (dropCount > 0) {
+                    drop.textContent = `Queda vs anterior: -${dropCount} (${formatPercent(dropRate)})`;
+                } else {
+                    drop.textContent = 'Queda vs anterior: 0 (0%)';
+                }
+                card.appendChild(drop);
+            }
+
+            if (!responses.length) {
+                const empty = document.createElement('p');
+                empty.className = 'admin-quiz-card-empty';
+                empty.textContent = 'Sem respostas registradas nessa pergunta.';
+                card.appendChild(empty);
+                quizQuestionsGrid.appendChild(card);
+                return;
+            }
+
+            responses.forEach((response) => {
+                const optionRow = document.createElement('div');
+                optionRow.className = 'admin-quiz-option-row';
+
+                const top = document.createElement('div');
+                top.className = 'admin-quiz-option-head';
+
+                const label = document.createElement('span');
+                label.className = 'admin-quiz-option-label';
+                label.textContent = String(response?.answer_text || '(sem resposta)').trim() || '(sem resposta)';
+                top.appendChild(label);
+
+                const count = Number(response?.count || 0);
+                const pct = Number(response?.pct || 0);
+                const countEl = document.createElement('span');
+                countEl.className = 'admin-quiz-option-count';
+                countEl.textContent = `${count} (${formatPercent(pct)})`;
+                top.appendChild(countEl);
+                optionRow.appendChild(top);
+
+                const bar = document.createElement('div');
+                bar.className = 'admin-quiz-option-bar';
+                const fill = document.createElement('i');
+                fill.className = 'admin-quiz-option-fill';
+                const pctWidth = Math.max(0, Math.min(100, pct));
+                fill.style.width = `${pctWidth}%`;
+                bar.appendChild(fill);
+                optionRow.appendChild(bar);
+
+                card.appendChild(optionRow);
+            });
+
+            quizQuestionsGrid.appendChild(card);
+        });
+    };
+
+    const loadQuizStats = async () => {
+        if (!wantsQuiz || loadingQuizStats) return;
+        loadingQuizStats = true;
+        if (quizRefresh) quizRefresh.disabled = true;
+        if (quizUpdated) quizUpdated.textContent = 'Atualizando...';
+        try {
+            const res = await adminFetch('/api/admin/quiz-stats');
+            if (!res.ok) {
+                const detail = await res.json().catch(() => ({}));
+                if (quizUpdated) {
+                    quizUpdated.textContent = detail?.error ? `Erro: ${detail.error}` : 'Falha ao carregar quiz.';
+                }
+                showToast('Falha ao carregar analytics do quiz.', 'error');
+                return;
+            }
+
+            const payload = await res.json().catch(() => ({}));
+            const summary = payload?.summary || {};
+            if (quizTotalLeads) quizTotalLeads.textContent = String(Number(summary.leads_with_quiz || 0));
+            if (quizCompletedLeads) quizCompletedLeads.textContent = String(Number(summary.leads_completed || 0));
+            if (quizCompletionRate) quizCompletionRate.textContent = formatPercent(summary.completion_rate || 0);
+            if (quizTotalAnswers) quizTotalAnswers.textContent = String(Number(summary.total_answers || 0));
+
+            renderQuizStatsQuestions(Array.isArray(payload?.questions) ? payload.questions : []);
+
+            if (quizUpdated) {
+                const updatedValue = summary.last_updated || new Date().toISOString();
+                const scannedRows = Number(summary.scanned_rows || 0);
+                quizUpdated.textContent = `Atualizado: ${formatDateTime(updatedValue)} | Leads varridos: ${scannedRows}`;
+            }
+        } catch (_error) {
+            if (quizUpdated) quizUpdated.textContent = 'Falha ao carregar quiz.';
+            showToast('Falha ao carregar analytics do quiz.', 'error');
+        } finally {
+            loadingQuizStats = false;
+            if (quizRefresh) quizRefresh.disabled = false;
+        }
+    };
+
     loginBtn?.addEventListener('click', async () => {
         if (loginError) loginError.classList.add('hidden');
         const password = passwordInput?.value || '';
@@ -3270,6 +3432,7 @@ function initAdmin() {
         if (wantsLeads) await loadLeads({ reset: true });
         if (wantsPages) await loadPageCounts();
         if (wantsBackredirects) await loadBackredirects();
+        if (wantsQuiz) await loadQuizStats();
     });
 
     saveBtn?.addEventListener('click', saveSettings);
@@ -3303,6 +3466,7 @@ function initAdmin() {
     saleUtmfyBtn?.addEventListener('click', runUtmfySale);
     testPushcutBtn?.addEventListener('click', runPushcutTest);
     processDispatchBtn?.addEventListener('click', runDispatchProcess);
+    quizRefresh?.addEventListener('click', () => loadQuizStats());
     paymentsActiveGateway?.addEventListener('change', () => {
         const selected = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
         setCurrentGatewayCard(selected);
@@ -3351,13 +3515,16 @@ function initAdmin() {
             if (wantsLeads) loadLeads({ reset: true });
             if (wantsPages) loadPageCounts();
             if (wantsBackredirects) loadBackredirects();
+            if (wantsQuiz) loadQuizStats();
             // Keep overview fresh without manual reload.
+            const refreshIntervalMs = wantsQuiz && !wantsLeads && !wantsPages && !wantsBackredirects ? 20000 : 10000;
             setInterval(() => {
                 if (document.visibilityState !== 'visible') return;
                 if (wantsLeads) loadLeads({ reset: true });
                 if (wantsPages) loadPageCounts();
                 if (wantsBackredirects) loadBackredirects();
-            }, 10000);
+                if (wantsQuiz) loadQuizStats();
+            }, refreshIntervalMs);
         } else {
             setLoginVisible(true);
         }

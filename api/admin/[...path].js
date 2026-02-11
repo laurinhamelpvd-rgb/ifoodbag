@@ -671,6 +671,190 @@ async function getPages(req, res) {
     res.json({ data });
 }
 
+async function getQuizStats(req, res) {
+    if (req.method !== 'GET') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+        res.status(500).json({ error: 'Supabase nao configurado.' });
+        return;
+    }
+
+    const maxRows = clamp(req.query.max || 20000, 1, 50000);
+    const pageSize = 1000;
+    let offset = 0;
+    let scannedRows = 0;
+    let leadsWithQuiz = 0;
+    let leadsCompleted = 0;
+    let totalAnswers = 0;
+    let lastUpdated = null;
+
+    const questionMap = new Map();
+
+    while (offset < maxRows) {
+        const take = Math.min(pageSize, maxRows - offset);
+        const url = new URL(`${SUPABASE_URL}/rest/v1/leads`);
+        url.searchParams.set('select', 'session_id,last_event,updated_at,payload');
+        url.searchParams.set('order', 'updated_at.desc');
+        url.searchParams.set('limit', String(take));
+        url.searchParams.set('offset', String(offset));
+
+        const response = await fetchFn(url.toString(), {
+            headers: {
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            res.status(502).json({ error: 'Falha ao buscar dados do quiz.', detail });
+            return;
+        }
+
+        const rows = await response.json().catch(() => []);
+        if (!Array.isArray(rows) || rows.length === 0) break;
+        scannedRows += rows.length;
+
+        rows.forEach((row) => {
+            const payload = asObject(row?.payload);
+            const answers = extractQuizAnswers(payload);
+            const lastEvent = String(row?.last_event || '').trim().toLowerCase();
+            const completed =
+                payload?.quizProgress?.completed === true ||
+                payload?.quiz?.completed === true ||
+                lastEvent === 'quiz_complete';
+            const hasQuizSignal = answers.length > 0 || lastEvent.includes('quiz');
+            if (!hasQuizSignal) return;
+
+            leadsWithQuiz += 1;
+            if (completed) leadsCompleted += 1;
+            totalAnswers += answers.length;
+
+            const updatedIso = toIsoDate(row?.updated_at);
+            const currentTs = lastUpdated ? Date.parse(lastUpdated) : 0;
+            const rowTs = updatedIso ? Date.parse(updatedIso) : 0;
+            if (!lastUpdated || (rowTs && rowTs > currentTs)) {
+                lastUpdated = updatedIso || lastUpdated;
+            }
+
+            const seenQuestionByLead = new Set();
+            answers.forEach((answer, index) => {
+                const questionId = String(answer?.question_id || '').trim();
+                const questionText = String(answer?.question_text || '').trim();
+                const questionKey = questionId || questionText || `q_${index + 1}`;
+                const optionText = String(answer?.answer_text || '').trim() || '(sem resposta)';
+                const stepRaw = Number(answer?.step_index || 0);
+                const stepIndex = Number.isFinite(stepRaw) && stepRaw > 0 ? Math.floor(stepRaw) : null;
+
+                if (!questionMap.has(questionKey)) {
+                    questionMap.set(questionKey, {
+                        question_id: questionId || null,
+                        question_text: questionText || questionKey,
+                        step_index: stepIndex,
+                        answered_leads: 0,
+                        responses: new Map()
+                    });
+                }
+
+                const questionStats = questionMap.get(questionKey);
+                if (!questionStats.step_index && stepIndex) {
+                    questionStats.step_index = stepIndex;
+                }
+                if (!questionStats.question_text && questionText) {
+                    questionStats.question_text = questionText;
+                }
+                if (!questionStats.question_id && questionId) {
+                    questionStats.question_id = questionId;
+                }
+
+                if (!seenQuestionByLead.has(questionKey)) {
+                    questionStats.answered_leads += 1;
+                    seenQuestionByLead.add(questionKey);
+                }
+
+                const currentOption = Number(questionStats.responses.get(optionText) || 0);
+                questionStats.responses.set(optionText, currentOption + 1);
+            });
+        });
+
+        offset += rows.length;
+        if (rows.length < take) break;
+    }
+
+    const questions = Array.from(questionMap.values())
+        .map((question) => {
+            const answered = Number(question.answered_leads || 0);
+            const responses = Array.from(question.responses.entries())
+                .map(([answerText, count]) => ({
+                    answer_text: answerText,
+                    count: Number(count || 0),
+                    pct: answered > 0 ? Math.round((Number(count || 0) / answered) * 1000) / 10 : 0
+                }))
+                .sort((a, b) => {
+                    if (b.count !== a.count) return b.count - a.count;
+                    return a.answer_text.localeCompare(b.answer_text);
+                });
+
+            const top = responses[0] || null;
+            return {
+                question_id: question.question_id || null,
+                question_text: question.question_text || '-',
+                step_index: question.step_index || null,
+                answered_leads: answered,
+                responses,
+                top_answer: top?.answer_text || null,
+                top_count: top?.count || 0,
+                top_pct: top?.pct || 0
+            };
+        })
+        .sort((a, b) => {
+            const stepA = Number(a.step_index || 0);
+            const stepB = Number(b.step_index || 0);
+            if (stepA && stepB && stepA !== stepB) return stepA - stepB;
+            if (stepA && !stepB) return -1;
+            if (!stepA && stepB) return 1;
+            if (b.answered_leads !== a.answered_leads) return b.answered_leads - a.answered_leads;
+            return String(a.question_text || '').localeCompare(String(b.question_text || ''));
+        });
+
+    let previousAnswered = 0;
+    const questionsWithDrop = questions.map((question, index) => {
+        const answered = Number(question.answered_leads || 0);
+        const dropFromPrevious = index === 0 ? 0 : Math.max(0, previousAnswered - answered);
+        const dropRate = index === 0 || previousAnswered <= 0
+            ? 0
+            : Math.round((dropFromPrevious / previousAnswered) * 1000) / 10;
+        previousAnswered = answered;
+        return {
+            ...question,
+            drop_from_previous: dropFromPrevious,
+            drop_rate: dropRate
+        };
+    });
+
+    const completionRate = leadsWithQuiz > 0
+        ? Math.round((leadsCompleted / leadsWithQuiz) * 1000) / 10
+        : 0;
+
+    res.status(200).json({
+        summary: {
+            scanned_rows: scannedRows,
+            leads_with_quiz: leadsWithQuiz,
+            leads_completed: leadsCompleted,
+            completion_rate: completionRate,
+            total_answers: totalAnswers,
+            total_questions: questionsWithDrop.length,
+            last_updated: lastUpdated
+        },
+        questions: questionsWithDrop
+    });
+}
+
 async function getBackredirects(req, res) {
     if (req.method !== 'GET') {
         res.status(405).json({ error: 'Method not allowed' });
@@ -1551,6 +1735,8 @@ module.exports = async (req, res) => {
             return getLeads(req, res);
         case 'pages':
             return getPages(req, res);
+        case 'quiz-stats':
+            return getQuizStats(req, res);
         case 'backredirects':
             return getBackredirects(req, res);
         case 'utmfy-test':

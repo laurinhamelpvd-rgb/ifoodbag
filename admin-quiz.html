@@ -7,7 +7,7 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>iFood Entregadores - Paginas</title>
+  <title>iFood Entregadores - Quiz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -22,7 +22,7 @@
 ></script>
 
 </head>
-<body data-page="admin" data-admin="pages">
+<body data-page="admin" data-admin="quiz">
   <div class="admin-shell">
     <aside class="admin-sidebar">
       <div class="admin-brand">
@@ -51,8 +51,8 @@
     <main class="admin-main">
       <header class="admin-topbar">
         <div>
-          <h1>Paginas</h1>
-          <p>Veja o volume por pagina e identifique onde o lead interrompe o fluxo.</p>
+          <h1>Analytics do Quiz</h1>
+          <p>Veja quantos leads clicaram em cada resposta de cada pergunta.</p>
         </div>
       </header>
 
@@ -70,19 +70,44 @@
       <div id="admin-panel" class="admin-panel hidden">
         <section class="admin-section admin-section--card">
           <div class="admin-section-header">
-            <h2>Insights do funil</h2>
-            <span class="admin-chip">Diagnostico</span>
+            <h2>Resumo do quiz</h2>
+            <span class="admin-chip">Funil de respostas</span>
           </div>
-          <p class="admin-hint">Compare cada etapa e veja onde esta a maior queda.</p>
-          <div class="admin-insights-grid" id="pages-insights"></div>
+          <div class="admin-toolbar">
+            <button id="quiz-refresh" class="btn-secondary" type="button">Atualizar quiz</button>
+            <span id="quiz-updated" class="admin-muted"></span>
+          </div>
+          <div class="admin-kpi-grid">
+            <div class="admin-kpi">
+              <span>Leads com quiz</span>
+              <strong id="quiz-total-leads">0</strong>
+              <em>Leads que responderam ao menos 1 pergunta</em>
+            </div>
+            <div class="admin-kpi">
+              <span>Leads que concluiram</span>
+              <strong id="quiz-completed-leads">0</strong>
+              <em>Chegaram ao evento quiz_complete</em>
+            </div>
+            <div class="admin-kpi admin-kpi--accent">
+              <span>Taxa de conclusao</span>
+              <strong id="quiz-completion-rate">0%</strong>
+              <em>Concluidos / leads com quiz</em>
+            </div>
+            <div class="admin-kpi">
+              <span>Total de respostas</span>
+              <strong id="quiz-total-answers">0</strong>
+              <em>Somatorio de todas as respostas do quiz</em>
+            </div>
+          </div>
         </section>
 
-        <section id="admin-pages" class="admin-section">
+        <section class="admin-section">
           <div class="admin-section-header">
-            <h2>Paginas e fluxo</h2>
-            <span class="admin-chip">Pageviews</span>
+            <h2>Pergunta por pergunta</h2>
+            <span class="admin-chip">Contagem por opcao</span>
           </div>
-          <div class="admin-pages-grid" id="pages-grid"></div>
+          <p class="admin-hint">Exemplo: 100 clicaram na opcao de cima e 51 na de baixo.</p>
+          <div id="quiz-questions-grid" class="admin-quiz-grid"></div>
         </section>
       </div>
     </main>

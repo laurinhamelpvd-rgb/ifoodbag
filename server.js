@@ -73,6 +73,10 @@ app.get('/admin/pages', (_req, res) => {
     res.sendFile(path.join(__dirname, 'admin-pages.html'));
 });
 
+app.get('/admin/quiz', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'admin-quiz.html'));
+});
+
 app.get('/admin/backredirects', (_req, res) => {
     res.sendFile(path.join(__dirname, 'admin-backredirects.html'));
 });
