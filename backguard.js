@@ -25,6 +25,23 @@
             return window.location.pathname + (window.location.search || '');
         };
 
+        var parseStorageJson = function (key) {
+            try {
+                var raw = window.localStorage ? window.localStorage.getItem(key) : '';
+                if (!raw) return null;
+                return JSON.parse(raw);
+            } catch (_error) {
+                return null;
+            }
+        };
+
+        var isPixPaidStatus = function (pix) {
+            if (!pix || typeof pix !== 'object') return false;
+            if (pix.upsellPaid === true || pix.paidAt) return true;
+            var status = String(pix.status || pix.statusRaw || pix.status_transaction || '').toLowerCase();
+            return /paid|approved|confirm|completed|success|conclu|aprov/.test(status);
+        };
+
         var resolveEarlyBackTarget = function () {
             try {
                 if (typeof window.__ifbResolveBackRedirect === 'function') {
@@ -33,6 +50,29 @@
                 }
             } catch (_error) {
                 // Fall through to checkout fallback.
+            }
+
+            try {
+                var personal = parseStorageJson('ifoodbag.personal') || {};
+                var address = parseStorageJson('ifoodbag.address') || null;
+                var shipping = parseStorageJson('ifoodbag.shipping') || null;
+                var pix = parseStorageJson('ifoodbag.pix') || null;
+                var hasPersonal =
+                    !!String(personal.name || '').trim() &&
+                    !!String(personal.cpf || '').trim() &&
+                    !!String(personal.birth || '').trim() &&
+                    !!String(personal.email || '').trim() &&
+                    !!String(personal.phone || '').trim();
+                var vslCompleted = window.localStorage && window.localStorage.getItem('ifoodbag.vslCompleted') === '1';
+                var pixPaid = isPixPaidStatus(pix);
+                var pixPending = !!pix && !pixPaid;
+
+                if (!vslCompleted && hasPersonal && address) return '/processando';
+                if (pixPending) return '/pix';
+                if (pixPaid) return '/upsell';
+                if (shipping) return '/orderbump';
+            } catch (_error2) {
+                // Ignore storage parsing issues.
             }
 
             var params = new URLSearchParams(window.location.search || '');

@@ -616,14 +616,28 @@ module.exports = async (req, res) => {
             : isRefused
                 ? 'pix_failed'
                 : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
-    const dedupeBase = txid || orderId || 'unknown';
-    const shouldSendUtmStatus = Boolean(orderId || txid) && previousLastEvent !== lastEvent;
+    const dedupeBase = orderId || txid || 'unknown';
+    const isTerminalUpdate = Boolean(isPaid || isRefunded || isRefused);
+    const previousLifecycleEvent = new Set([
+        'pix_created',
+        'pix_pending',
+        'pix_confirmed',
+        'pix_refunded',
+        'pix_refused',
+        'upsell_pix_created',
+        'upsell_pix_confirmed'
+    ]).has(previousLastEvent);
+    const shouldSendPendingFallback = !isTerminalUpdate && !previousLifecycleEvent;
+    const shouldSendUtmStatus =
+        Boolean(orderId || txid) &&
+        previousLastEvent !== lastEvent &&
+        (isTerminalUpdate || shouldSendPendingFallback);
     const shouldTriggerPaidSideEffects = Boolean(isPaid && txid) && previousLastEvent !== 'pix_confirmed';
 
     if (shouldSendUtmStatus) {
         const utmPayload = {
             event: 'pix_status',
-            orderId: txid || orderId,
+            orderId: orderId || txid,
             txid,
             gateway,
             status: utmifyStatus,

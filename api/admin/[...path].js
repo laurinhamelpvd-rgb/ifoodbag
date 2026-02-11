@@ -761,6 +761,7 @@ async function getQuizStats(req, res) {
     let totalAnswers = 0;
     let lastUpdated = null;
     let partialReason = '';
+    let partialDetail = '';
 
     const questionMap = new Map();
 
@@ -791,27 +792,18 @@ async function getQuizStats(req, res) {
                 signal: controller.signal
             });
         } catch (error) {
-            if (scannedRows > 0) {
-                partialReason = partialReason || 'request_timeout';
-                break;
-            }
-            res.status(502).json({
-                error: 'Falha ao buscar dados do quiz.',
-                detail: error?.message || String(error)
-            });
-            return;
+            partialReason = partialReason || 'request_timeout';
+            partialDetail = partialDetail || error?.message || String(error) || 'request_timeout';
+            break;
         } finally {
             if (timeoutRef) clearTimeout(timeoutRef);
         }
 
         if (!response.ok) {
             const detail = await response.text().catch(() => '');
-            if (scannedRows > 0) {
-                partialReason = partialReason || 'upstream_error';
-                break;
-            }
-            res.status(502).json({ error: 'Falha ao buscar dados do quiz.', detail });
-            return;
+            partialReason = partialReason || 'upstream_error';
+            partialDetail = partialDetail || detail || `status_${Number(response?.status || 0)}`;
+            break;
         }
 
         const rows = await response.json().catch(() => []);
@@ -889,6 +881,21 @@ async function getQuizStats(req, res) {
         if (rows.length < take) break;
     }
 
+    if (scannedRows === 0 && partialReason && quizStatsCache.payload) {
+        res.status(200).json({
+            ...quizStatsCache.payload,
+            cached: true,
+            stale: true,
+            summary: {
+                ...(quizStatsCache.payload.summary || {}),
+                partial: true,
+                partial_reason: partialReason,
+                partial_detail: partialDetail
+            }
+        });
+        return;
+    }
+
     const questions = Array.from(questionMap.values())
         .map((question) => {
             const answered = Number(question.answered_leads || 0);
@@ -954,7 +961,8 @@ async function getQuizStats(req, res) {
             total_questions: questionsWithDrop.length,
             last_updated: lastUpdated,
             partial: !!partialReason,
-            partial_reason: partialReason || ''
+            partial_reason: partialReason || '',
+            partial_detail: partialDetail || ''
         },
         questions: questionsWithDrop
     };

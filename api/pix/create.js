@@ -1,5 +1,5 @@
 const { sanitizeDigits, extractIp } = require('../../lib/ativus');
-const { upsertLead } = require('../../lib/lead-store');
+const { upsertLead, getLeadBySessionId } = require('../../lib/lead-store');
 const { ensureAllowedRequest } = require('../../lib/request-guard');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 const { sendUtmfy } = require('../../lib/utmfy');
@@ -8,6 +8,7 @@ const { normalizeGatewayId } = require('../../lib/payment-gateway-config');
 const { getPaymentsConfig } = require('../../lib/payments-config-store');
 const {
     requestCreateTransaction: requestAtivushubCreate,
+    requestTransactionStatus: requestAtivushubStatus,
     getSellerId: getAtivushubSellerId,
     resolvePostbackUrl: resolveAtivushubPostbackUrl
 } = require('../../lib/ativushub-provider');
@@ -17,7 +18,8 @@ const {
     resolvePostbackUrl: resolveGhostspayPostbackUrl
 } = require('../../lib/ghostspay-provider');
 const {
-    requestCreateTransaction: requestSunizeCreate
+    requestCreateTransaction: requestSunizeCreate,
+    requestTransactionById: requestSunizeStatus
 } = require('../../lib/sunize-provider');
 const { getSunizeStatus } = require('../../lib/sunize-status');
 
@@ -240,6 +242,229 @@ function resolveSunizeResponse(data = {}) {
     return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status, externalId };
 }
 
+function resolveAtivushubStatusResponse(data = {}) {
+    const root = asObject(data);
+    const nested = asObject(root.data);
+
+    const txid = pickText(
+        root.idTransaction,
+        root.idtransaction,
+        nested.idTransaction,
+        nested.idtransaction
+    );
+    const paymentCode = pickText(
+        root.paymentCode,
+        root.paymentcode,
+        nested.paymentCode,
+        nested.paymentcode
+    );
+    const qrRaw = pickText(
+        root.paymentCodeBase64,
+        root.paymentcodebase64,
+        nested.paymentCodeBase64,
+        nested.paymentcodebase64
+    );
+    let paymentQrUrl = pickText(
+        root.paymentQrUrl,
+        nested.paymentQrUrl,
+        root.qrcodeUrl,
+        nested.qrcodeUrl
+    );
+    let paymentCodeBase64 = '';
+    if (!paymentQrUrl && qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+
+    const status = pickText(
+        root.status_transaction,
+        root.status,
+        nested.status_transaction,
+        nested.status
+    );
+    return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status, externalId: '' };
+}
+
+function normalizeStatus(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/-+/g, '_');
+}
+
+function isTerminalPixStatus(value = '') {
+    const status = normalizeStatus(value);
+    if (!status) return false;
+    return (
+        status === 'paid' ||
+        status === 'pix_confirmed' ||
+        status === 'approved' ||
+        status === 'completed' ||
+        status === 'success' ||
+        status === 'refunded' ||
+        status === 'pix_refunded' ||
+        status === 'refused' ||
+        status === 'pix_refused' ||
+        status === 'failed' ||
+        status === 'cancelled' ||
+        status === 'canceled' ||
+        status === 'expired' ||
+        status === 'chargeback' ||
+        status === 'chargedback'
+    );
+}
+
+async function hydratePixVisualByGateway(gateway, gatewayConfig, txid) {
+    if (!txid) {
+        return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
+    }
+
+    if (gateway === 'ghostspay') {
+        const quickConfig = {
+            ...gatewayConfig,
+            timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig?.timeoutMs || 12000), 3500))
+        };
+        const { response, data } = await requestGhostspayStatus(quickConfig, txid).catch(() => ({
+            response: { ok: false },
+            data: {}
+        }));
+        if (response?.ok) return resolveGhostspayResponse(data || {});
+        return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
+    }
+
+    if (gateway === 'sunize') {
+        const quickConfig = {
+            ...gatewayConfig,
+            timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig?.timeoutMs || 12000), 3500))
+        };
+        const { response, data } = await requestSunizeStatus(quickConfig, txid).catch(() => ({
+            response: { ok: false },
+            data: {}
+        }));
+        if (response?.ok) return resolveSunizeResponse(data || {});
+        return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
+    }
+
+    const quickConfig = {
+        ...gatewayConfig,
+        timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig?.timeoutMs || 12000), 3500))
+    };
+    const { response, data } = await requestAtivushubStatus(quickConfig, txid).catch(() => ({
+        response: { ok: false },
+        data: {}
+    }));
+    if (response?.ok) return resolveAtivushubStatusResponse(data || {});
+    return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
+}
+
+async function findReusablePixBySession({
+    sessionId,
+    gateway,
+    gatewayConfig,
+    totalAmount,
+    shippingId,
+    upsellEnabled
+}) {
+    const cleanSession = String(sessionId || '').trim();
+    if (!cleanSession) return null;
+
+    const bySession = await getLeadBySessionId(cleanSession).catch(() => ({ ok: false, data: null }));
+    const lead = bySession?.ok ? bySession.data : null;
+    if (!lead) return null;
+
+    const payload = asObject(lead.payload);
+    const storedGateway = normalizeGatewayId(
+        payload.gateway ||
+        payload.pixGateway ||
+        payload.paymentGateway ||
+        lead.gateway ||
+        gateway
+    );
+    if (storedGateway !== gateway) return null;
+
+    const txid = pickText(
+        lead.pix_txid,
+        payload.pixTxid,
+        payload.pix?.idTransaction,
+        payload.pix?.txid
+    );
+    if (!txid) return null;
+
+    const lastEvent = String(lead.last_event || '').trim().toLowerCase();
+    const statusRaw = pickText(
+        payload.pixStatus,
+        payload.pix?.status,
+        payload.pix?.statusRaw,
+        lastEvent
+    );
+    if (
+        payload.pixPaidAt ||
+        payload.pixRefundedAt ||
+        payload.pixRefusedAt ||
+        lastEvent === 'pix_confirmed' ||
+        lastEvent === 'pix_refunded' ||
+        lastEvent === 'pix_refused' ||
+        isTerminalPixStatus(statusRaw)
+    ) {
+        return null;
+    }
+
+    const createdAtRaw = pickText(
+        payload.pixCreatedAt,
+        payload.pix?.createdAt,
+        lead.updated_at,
+        lead.created_at
+    );
+    const createdAtMs = Date.parse(createdAtRaw);
+    if (Number.isFinite(createdAtMs) && (Date.now() - createdAtMs) > (20 * 60 * 1000)) {
+        return null;
+    }
+
+    const storedAmount = Number(payload.pixAmount || lead.pix_amount || payload.pix?.amount || 0);
+    if (storedAmount > 0 && totalAmount > 0 && Math.abs(storedAmount - totalAmount) > 0.01) {
+        return null;
+    }
+
+    const storedShippingId = pickText(payload.shipping?.id, payload.shippingId, lead.shipping_id);
+    if (shippingId && storedShippingId && String(shippingId) !== String(storedShippingId)) {
+        return null;
+    }
+
+    const storedUpsell = Boolean(payload?.upsell?.enabled || payload?.isUpsell);
+    if (storedUpsell !== Boolean(upsellEnabled)) return null;
+
+    let paymentCode = pickText(payload?.pix?.paymentCode, payload.paymentCode);
+    let paymentCodeBase64 = pickText(payload?.pix?.paymentCodeBase64, payload.paymentCodeBase64);
+    let paymentQrUrl = pickText(payload?.pix?.paymentQrUrl, payload.paymentQrUrl);
+    let externalId = pickText(payload.pixExternalId, payload?.pix?.externalId);
+    let status = statusRaw;
+
+    if (!paymentCode && !paymentCodeBase64 && !paymentQrUrl) {
+        const hydrated = await hydratePixVisualByGateway(gateway, gatewayConfig, txid);
+        paymentCode = pickText(paymentCode, hydrated.paymentCode);
+        paymentCodeBase64 = pickText(paymentCodeBase64, hydrated.paymentCodeBase64);
+        paymentQrUrl = pickText(paymentQrUrl, hydrated.paymentQrUrl);
+        externalId = pickText(externalId, hydrated.externalId);
+        status = pickText(status, hydrated.status);
+    }
+
+    return {
+        idTransaction: txid,
+        paymentCode,
+        paymentCodeBase64,
+        paymentQrUrl,
+        status: status || 'waiting_payment',
+        amount: totalAmount > 0 ? totalAmount : storedAmount,
+        gateway,
+        externalId,
+        reused: true
+    };
+}
+
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
 
@@ -317,6 +542,18 @@ module.exports = async (req, res) => {
                 unitPrice: Number(bumpPrice.toFixed(2)),
                 tangible: false
             });
+        }
+
+        const reusable = await findReusablePixBySession({
+            sessionId: rawBody.sessionId,
+            gateway,
+            gatewayConfig,
+            totalAmount,
+            shippingId: String(shipping?.id || '').trim(),
+            upsellEnabled
+        });
+        if (reusable) {
+            return res.status(200).json(reusable);
         }
 
         let response;
@@ -567,6 +804,21 @@ module.exports = async (req, res) => {
             pixStatusChangedAt: pixCreatedAt,
             pixStatus: statusRaw || 'waiting_payment',
             pixExternalId: externalId || undefined,
+            paymentCode: paymentCode || undefined,
+            paymentCodeBase64: paymentCodeBase64 || undefined,
+            paymentQrUrl: paymentQrUrl || undefined,
+            pix: {
+                ...asObject(rawBody?.pix),
+                idTransaction: txid,
+                paymentCode,
+                paymentCodeBase64,
+                paymentQrUrl,
+                status: statusRaw || 'waiting_payment',
+                gateway,
+                amount: totalAmount,
+                createdAt: pixCreatedAt,
+                externalId: externalId || undefined
+            },
             upsell: upsellEnabled ? {
                 enabled: true,
                 kind: String(upsell?.kind || 'frete_1dia'),
@@ -576,7 +828,7 @@ module.exports = async (req, res) => {
             } : null
         }, req).catch(() => null);
 
-        const utmOrderId = txid || orderId;
+        const utmOrderId = orderId;
         const responsePayload = {
             idTransaction: txid,
             paymentCode,
@@ -591,20 +843,6 @@ module.exports = async (req, res) => {
 
         // Side effects run asynchronously to keep PIX generation fast for the buyer.
         (async () => {
-            const withTimeout = async (promise, timeoutMs, fallbackValue) => {
-                let timeoutRef = null;
-                try {
-                    return await Promise.race([
-                        Promise.resolve(promise),
-                        new Promise((resolve) => {
-                            timeoutRef = setTimeout(() => resolve(fallbackValue), timeoutMs);
-                        })
-                    ]);
-                } finally {
-                    if (timeoutRef) clearTimeout(timeoutRef);
-                }
-            };
-
             const utmJob = {
                 channel: 'utmfy',
                 eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
@@ -668,19 +906,11 @@ module.exports = async (req, res) => {
             };
 
             const [utmImmediate, pushImmediate] = await Promise.all([
-                withTimeout(
-                    sendUtmfy(utmJob.eventName, utmJob.payload).catch((error) => ({
-                        ok: false,
-                        reason: error?.message || 'utmfy_immediate_error'
-                    })),
-                    6000,
-                    { ok: false, reason: 'utmfy_timeout' }
-                ),
-                withTimeout(
-                    sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false, reason: 'pushcut_immediate_error' })),
-                    6000,
-                    { ok: false, reason: 'pushcut_timeout' }
-                )
+                sendUtmfy(utmJob.eventName, utmJob.payload).catch((error) => ({
+                    ok: false,
+                    reason: error?.message || 'utmfy_immediate_error'
+                })),
+                sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false, reason: 'pushcut_immediate_error' }))
             ]);
 
             let shouldProcessQueue = false;
@@ -699,7 +929,7 @@ module.exports = async (req, res) => {
             shouldProcessQueue = true;
 
             if (shouldProcessQueue) {
-                await withTimeout(processDispatchQueue(8).catch(() => null), 6000, null);
+                await processDispatchQueue(8).catch(() => null);
             }
         })().catch((error) => {
             console.error('[pix] side effect error', { message: error?.message || String(error) });

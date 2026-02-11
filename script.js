@@ -119,7 +119,10 @@ const state = {
     pixelConfigAt: 0,
     siteConfig: null,
     siteConfigAt: 0,
-    toastTimeout: null
+    toastTimeout: null,
+    pixCreatePromise: null,
+    pixCreateKey: '',
+    pixCreateAt: 0
 };
 
 const dom = {};
@@ -296,20 +299,15 @@ function setupGlobalBackRedirect(page) {
             if (orderBumpBackHandled) return;
             orderBumpBackHandled = true;
             const shipping = loadShipping();
-            if (!shipping) {
-                redirect(resolveTargetUrl());
-                return;
-            }
-            trackLead('orderbump_back_skip', { stage: 'orderbump', shipping });
+            trackLead('orderbump_back_skip', { stage: 'orderbump', shipping: shipping || {} });
             saveBump({
                 selected: false,
                 price: 9.9,
                 title: 'Seguro Bag',
                 skippedByBack: true
             });
-            createPixCharge(shipping, 0).catch(() => {
-                redirect(resolveTargetUrl());
-            });
+            setStage('checkout');
+            redirect(resolveTargetUrl());
             return;
         }
 
@@ -2369,7 +2367,7 @@ function buildBackRedirectUrl(pageOverride) {
     if (pixPaid && page !== 'upsell') {
         return 'upsell.html';
     }
-    if (shipping && !pixPending && page !== 'upsell') {
+    if (shipping && !pixPending && page !== 'upsell' && page !== 'orderbump') {
         return 'orderbump.html';
     }
 
@@ -2386,7 +2384,7 @@ function buildBackRedirectUrl(pageOverride) {
             return directCheckoutUrl();
         case 'orderbump':
             if (pixPending) return 'pix.html';
-            if (shipping) return 'orderbump.html';
+            if (shipping) return 'checkout.html';
             return directCheckoutUrl();
         case 'pix':
             return pixPending ? 'pix.html' : directCheckoutUrl();
@@ -4098,6 +4096,61 @@ function looksLikeSessionError(message = '') {
     return normalized.includes('sess') && (normalized.includes('inv') || normalized.includes('invalid'));
 }
 
+function normalizePixLifecycleStatus(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/-+/g, '_');
+}
+
+function canReuseRecentPixCharge(pixData, expected = {}) {
+    if (!pixData || typeof pixData !== 'object') return false;
+
+    const txid = String(pixData.idTransaction || pixData.txid || '').trim();
+    if (!txid) return false;
+
+    const status = normalizePixLifecycleStatus(
+        pixData.status || pixData.statusRaw || pixData.status_transaction || ''
+    );
+    if (
+        pixData.paidAt ||
+        status === 'paid' ||
+        status === 'refunded' ||
+        status === 'refused' ||
+        status === 'failed' ||
+        status === 'expired' ||
+        status === 'canceled' ||
+        status === 'cancelled' ||
+        status === 'chargedback' ||
+        status === 'chargeback'
+    ) {
+        return false;
+    }
+
+    const createdAt = Number(pixData.createdAt || 0);
+    if (!createdAt || Number.isNaN(createdAt)) return false;
+    if (Date.now() - createdAt > (20 * 60 * 1000)) return false;
+
+    const expectedAmount = Number(expected.amount || 0);
+    const storedAmount = Number(pixData.amount || 0);
+    if (expectedAmount > 0 && storedAmount > 0 && Math.abs(storedAmount - expectedAmount) > 0.01) {
+        return false;
+    }
+
+    const expectedShipping = String(expected.shippingId || '').trim();
+    const storedShipping = String(pixData.shippingId || '').trim();
+    if (expectedShipping && storedShipping && expectedShipping !== storedShipping) {
+        return false;
+    }
+
+    if (Boolean(expected.isUpsell) !== Boolean(pixData.isUpsell)) {
+        return false;
+    }
+
+    return true;
+}
+
 async function postPixCreateWithSessionRetry(payload) {
     const send = async () => {
         const response = await fetch('/api/pix/create', {
@@ -4121,70 +4174,105 @@ async function postPixCreateWithSessionRetry(payload) {
 }
 
 async function createPixCharge(shipping, bumpPrice, options = {}) {
-    await ensureApiSession();
-
     const extraCharge = Number(bumpPrice || 0);
     const amount = Number((shipping.price + extraCharge).toFixed(2));
     const isUpsell = Boolean(options?.upsell?.enabled);
-    const trackEventRequested = isUpsell ? 'upsell_pix_create_requested' : 'pix_create_requested';
-    const trackEventCreated = isUpsell ? 'upsell_pix_created_front' : 'pix_created_front';
-    const payload = {
-        sessionId: getLeadSessionId(),
-        amount,
-        stage: isUpsell ? 'upsell' : 'pix',
-        event: trackEventRequested,
-        sourceUrl: window.location.href,
-        utm: getUtmData(),
-        shipping,
-        bump: extraCharge > 0 ? { title: 'Seguro Bag', price: extraCharge } : null,
-        personal: getPixPersonalPayload(),
-        address: getPixAddressPayload(),
-        extra: loadAddressExtra(),
-        sourceStage: String(options?.sourceStage || ''),
-        upsell: isUpsell ? {
-            enabled: true,
-            kind: String(options?.upsell?.kind || 'frete_1dia'),
-            title: String(options?.upsell?.title || 'Prioridade de envio'),
-            price: Number(options?.upsell?.price || extraCharge || shipping.price || 0),
-            previousTxid: String(options?.upsell?.previousTxid || '')
-        } : null
-    };
+    const sessionId = getLeadSessionId();
+    const lockKey = [
+        sessionId,
+        isUpsell ? 'upsell' : 'base',
+        String(shipping?.id || ''),
+        String(amount.toFixed(2))
+    ].join('|');
 
-    const { response: res, body: data } = await postPixCreateWithSessionRetry(payload);
-    if (!res.ok) {
-        const message = normalizeApiErrorMessage(data?.error || '') || 'Falha ao gerar o PIX. Tente novamente em instantes.';
-        trackLead(isUpsell ? 'upsell_pix_create_failed' : 'pix_create_failed', {
-            stage: isUpsell ? 'upsell' : 'orderbump',
-            shipping,
-            bump: payload.bump,
-            amount
-        });
-        throw new Error(message);
+    const cachedPix = loadPix();
+    if (canReuseRecentPixCharge(cachedPix, { amount, shippingId: shipping?.id || '', isUpsell })) {
+        setStage('pix');
+        redirect('pix.html');
+        return;
     }
-    savePix({
-        ...data,
-        amount,
-        shippingId: shipping.id,
-        shippingName: shipping.name,
-        bumpName: extraCharge > 0 ? 'Seguro Bag' : '',
-        bumpPrice: extraCharge,
-        createdAt: Date.now(),
-        isUpsell,
-        upsell: payload.upsell
-    });
-    setStage('pix');
-    trackLead(trackEventCreated, {
-        stage: 'pix',
-        shipping,
-        bump: payload.bump,
-        pix: {
+
+    if (
+        state.pixCreatePromise &&
+        state.pixCreateKey === lockKey &&
+        (Date.now() - Number(state.pixCreateAt || 0)) < 20000
+    ) {
+        return state.pixCreatePromise;
+    }
+
+    const run = (async () => {
+        await ensureApiSession();
+
+        const trackEventRequested = isUpsell ? 'upsell_pix_create_requested' : 'pix_create_requested';
+        const trackEventCreated = isUpsell ? 'upsell_pix_created_front' : 'pix_created_front';
+        const payload = {
+            sessionId,
+            amount,
+            stage: isUpsell ? 'upsell' : 'pix',
+            event: trackEventRequested,
+            sourceUrl: window.location.href,
+            utm: getUtmData(),
+            shipping,
+            bump: extraCharge > 0 ? { title: 'Seguro Bag', price: extraCharge } : null,
+            personal: getPixPersonalPayload(),
+            address: getPixAddressPayload(),
+            extra: loadAddressExtra(),
+            sourceStage: String(options?.sourceStage || ''),
+            upsell: isUpsell ? {
+                enabled: true,
+                kind: String(options?.upsell?.kind || 'frete_1dia'),
+                title: String(options?.upsell?.title || 'Prioridade de envio'),
+                price: Number(options?.upsell?.price || extraCharge || shipping.price || 0),
+                previousTxid: String(options?.upsell?.previousTxid || '')
+            } : null
+        };
+
+        const { response: res, body: data } = await postPixCreateWithSessionRetry(payload);
+        if (!res.ok) {
+            const message = normalizeApiErrorMessage(data?.error || '') || 'Falha ao gerar o PIX. Tente novamente em instantes.';
+            trackLead(isUpsell ? 'upsell_pix_create_failed' : 'pix_create_failed', {
+                stage: isUpsell ? 'upsell' : 'orderbump',
+                shipping,
+                bump: payload.bump,
+                amount
+            });
+            throw new Error(message);
+        }
+
+        const pixPayload = {
             ...data,
+            amount,
+            shippingId: shipping.id,
+            shippingName: shipping.name,
+            bumpName: extraCharge > 0 ? 'Seguro Bag' : '',
+            bumpPrice: extraCharge,
+            createdAt: Date.now(),
             isUpsell,
             upsell: payload.upsell
-        },
-        amount
+        };
+        savePix(pixPayload);
+        setStage('pix');
+        trackLead(trackEventCreated, {
+            stage: 'pix',
+            shipping,
+            bump: payload.bump,
+            pix: pixPayload,
+            amount
+        });
+        redirect('pix.html');
+    })();
+
+    state.pixCreatePromise = run;
+    state.pixCreateKey = lockKey;
+    state.pixCreateAt = Date.now();
+
+    return run.finally(() => {
+        if (state.pixCreateKey === lockKey) {
+            state.pixCreatePromise = null;
+            state.pixCreateKey = '';
+            state.pixCreateAt = 0;
+        }
     });
-    redirect('pix.html');
 }
 
 function savePix(data) {
