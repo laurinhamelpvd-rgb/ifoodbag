@@ -230,6 +230,8 @@ function setupGlobalBackRedirect(page) {
     }
 
     const resolveTargetUrl = () => buildBackRedirectUrl(page);
+    const useModalOnFirstBack = offer.mode === 'pix-copy';
+    window.__ifbResolveBackRedirect = () => buildBackRedirectUrl(page);
     const markBackAttempt = () => {
         if (backAttemptTracked) return;
         backAttemptTracked = true;
@@ -268,10 +270,7 @@ function setupGlobalBackRedirect(page) {
         }
     };
 
-    const handleBackAttempt = (event) => {
-        const eventState = event && typeof event === 'object' ? event.state : null;
-        const foreignGuard = eventState && eventState.ifb && eventState.token && eventState.token !== guardToken;
-        if (foreignGuard) return;
+    const handleBackAttempt = () => {
         const now = Date.now();
         if ((now - backAttemptAt) < 40) return;
         backAttemptAt = now;
@@ -296,6 +295,11 @@ function setupGlobalBackRedirect(page) {
             createPixCharge(shipping, 0).catch(() => {
                 redirect(resolveTargetUrl());
             });
+            return;
+        }
+
+        if (!useModalOnFirstBack) {
+            redirect(resolveTargetUrl());
             return;
         }
 
@@ -334,6 +338,10 @@ function setupGlobalBackRedirect(page) {
         reinforceGuards();
     }, { once: true });
     window.addEventListener('popstate', handleBackAttempt);
+    window.addEventListener('hashchange', () => {
+        if (window.__ifbAllowUnload) return;
+        handleBackAttempt({ state: history.state });
+    });
     window.addEventListener('keydown', (event) => {
         const key = String(event.key || '').toLowerCase();
         const isBackspace = key === 'backspace';
@@ -2202,7 +2210,10 @@ function buildBackRedirectUrl(pageOverride) {
         personal?.phone &&
         address
     );
-    const vslRequiredPages = new Set(['home', 'success', 'checkout', 'orderbump', 'pix', 'upsell']);
+    if (!isVslCompleted() && page === 'processing') {
+        return 'processando.html';
+    }
+    const vslRequiredPages = new Set(['home', 'quiz', 'personal', 'cep', 'success', 'checkout', 'orderbump', 'pix', 'upsell']);
     if (!isVslCompleted() && canOpenVsl && vslRequiredPages.has(page)) {
         return 'processando.html';
     }
