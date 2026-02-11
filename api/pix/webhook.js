@@ -633,11 +633,24 @@ module.exports = async (req, res) => {
                 : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
     const dedupeBase = orderId || txid || 'unknown';
     const isTerminalUpdate = Boolean(isPaid || isRefunded || isRefused);
+    const previousLifecycleEvent = new Set([
+        'pix_created',
+        'pix_pending',
+        'pix_confirmed',
+        'pix_refunded',
+        'pix_refused',
+        'upsell_pix_created',
+        'upsell_pix_confirmed'
+    ]).has(previousLastEvent);
+    const shouldSendPendingFallback = !isTerminalUpdate && !previousLifecycleEvent;
     const shouldSendUtmStatus =
         Boolean(orderId || txid) &&
         previousLastEvent !== lastEvent &&
-        isTerminalUpdate;
+        (isTerminalUpdate || shouldSendPendingFallback);
     const shouldTriggerPaidSideEffects = Boolean(isPaid && txid) && previousLastEvent !== 'pix_confirmed';
+    const shouldSendCreatedPushFallback =
+        Boolean(orderId || txid) &&
+        shouldSendPendingFallback;
 
     if (shouldSendUtmStatus) {
         const utmPayload = {
@@ -713,6 +726,39 @@ module.exports = async (req, res) => {
         }));
         if (!utmImmediate?.ok) {
             await enqueueDispatch(utmJob).catch(() => null);
+            await processDispatchQueue(10).catch(() => null);
+        }
+    }
+
+    if (shouldSendCreatedPushFallback) {
+        const orderIdForPush = String(
+            leadData?.session_id ||
+            sessionOrderId ||
+            body?.metadata?.orderId ||
+            body?.orderId ||
+            ''
+        ).trim();
+        const pushPayload = {
+            txid,
+            orderId: txid || orderIdForPush,
+            status: statusRaw || 'pending',
+            amount: eventAmount,
+            gateway,
+            customerName: leadData?.name || evt.fallbackPersonal?.name || '',
+            customerEmail: leadData?.email || evt.fallbackPersonal?.email || '',
+            cep: leadData?.cep || '',
+            shippingName: leadData?.shipping_name || '',
+            isUpsell: upsellEvent
+        };
+        const pushKind = upsellEvent ? 'upsell_pix_created' : 'pix_created';
+        const pushImmediate = await sendPushcut(pushKind, pushPayload).catch(() => ({ ok: false }));
+        if (!pushImmediate?.ok) {
+            await enqueueDispatch({
+                channel: 'pushcut',
+                kind: pushKind,
+                dedupeKey: `pushcut:pix_created_fallback:${gateway}:${dedupeBase}`,
+                payload: pushPayload
+            }).catch(() => null);
             await processDispatchQueue(10).catch(() => null);
         }
     }
