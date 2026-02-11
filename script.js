@@ -1242,7 +1242,72 @@ function initCheckout() {
     const couponBanner = document.getElementById('coupon-banner');
     const btnEditData = document.querySelector('.action-stack a[href^="dados"]');
     const btnEditAddress = document.querySelector('.action-stack a[href^="endereco"]');
+    const freightCard = document.querySelector('.freight-card');
+    const checkoutStepCep = document.getElementById('checkout-step-cep');
+    const checkoutStepFrete = document.getElementById('checkout-step-frete');
+    const checkoutStepFinal = document.getElementById('checkout-step-final');
+    const checkoutNextStep = document.getElementById('checkout-next-step');
+    const checkoutSelectedShipping = document.getElementById('checkout-selected-shipping');
     if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
+
+    let orderBumpHintEnabled = true;
+    let checkoutSubmitting = false;
+
+    const setCheckoutFlowStep = (step) => {
+        checkoutStepCep?.classList.toggle('is-active', step === 'cep');
+        checkoutStepFrete?.classList.toggle('is-active', step === 'frete');
+        checkoutStepFinal?.classList.toggle('is-active', step === 'final');
+    };
+
+    const formatShippingLabel = (option) => {
+        if (!option) return 'Frete ainda nao selecionado.';
+        const currentPrice = formatCurrency(option.price || 0);
+        const originalPrice = Number(option.originalPrice || 0);
+        if (originalPrice > Number(option.price || 0)) {
+            return `${option.name} - de ${formatCurrency(originalPrice)} por ${currentPrice}`;
+        }
+        return `${option.name} - ${currentPrice}`;
+    };
+
+    const updateCheckoutActionPanel = () => {
+        if (!btnFinish) return;
+        btnFinish.classList.remove('hidden');
+        const cepDigits = String(checkoutCep?.value || '').replace(/\D/g, '');
+        const hasValidCep = cepDigits.length === 8;
+        const hasShipping = !!shipping;
+
+        let flowStep = 'cep';
+        if (hasShipping) {
+            flowStep = 'final';
+        } else if (hasValidCep) {
+            flowStep = 'frete';
+        }
+        setCheckoutFlowStep(flowStep);
+
+        if (flowStep === 'cep') {
+            if (checkoutNextStep) checkoutNextStep.textContent = 'Informe seu CEP para liberar as opcoes de frete.';
+        } else if (flowStep === 'frete') {
+            if (checkoutNextStep) checkoutNextStep.textContent = 'Escolha o frete ideal para continuar para a proxima etapa.';
+        } else if (checkoutNextStep) {
+            checkoutNextStep.textContent = orderBumpHintEnabled
+                ? 'Frete selecionado. Agora voce segue para a oferta de Seguro Bag.'
+                : 'Frete selecionado. Agora voce segue direto para o pagamento PIX.';
+        }
+
+        if (checkoutSelectedShipping) {
+            checkoutSelectedShipping.textContent = formatShippingLabel(shipping);
+        }
+
+        btnFinish.disabled = checkoutSubmitting;
+        btnFinish.classList.toggle('btn-primary--blocked', !hasShipping && !checkoutSubmitting);
+        if (checkoutSubmitting) {
+            btnFinish.textContent = 'Processando...';
+            return;
+        }
+        btnFinish.textContent = hasShipping
+            ? (orderBumpHintEnabled ? 'Continuar para Seguro Bag' : 'Ir para pagamento PIX')
+            : 'Selecione um frete para continuar';
+    };
 
     const coupon = loadCoupon();
     if (couponBanner && (coupon?.amountOff || coupon?.discount)) {
@@ -1286,12 +1351,23 @@ function initCheckout() {
 
     if (checkoutCep) {
         checkoutCep.value = address?.cep || '';
-        checkoutCep.addEventListener('input', () => maskCep(checkoutCep));
+        checkoutCep.addEventListener('input', () => {
+            maskCep(checkoutCep);
+            updateCheckoutActionPanel();
+        });
     }
 
     if (shipping) {
         shipping = applyCouponToShipping(shipping);
     }
+
+    const orderBumpEnabledPromise = isOrderBumpEnabled()
+        .then((enabled) => {
+            orderBumpHintEnabled = enabled !== false;
+            updateCheckoutActionPanel();
+            return orderBumpHintEnabled;
+        })
+        .catch(() => orderBumpHintEnabled);
 
     let cepLookupTimer = null;
     const getCepDigits = (value) => String(value || '').replace(/\D/g, '');
@@ -1495,23 +1571,22 @@ function initCheckout() {
             }
             setHidden(shippingTotal, false);
         }
-        if (btnFinish) {
-            btnFinish.classList.remove('hidden');
-        }
         const labels = freightOptions?.querySelectorAll('.freight-option') || [];
         labels.forEach((label) => {
             label.classList.toggle('freight-option--active', label.querySelector('input')?.value === opt.id);
         });
+        updateCheckoutActionPanel();
     };
 
     const clearShippingSelection = () => {
         localStorage.removeItem(STORAGE_KEYS.shipping);
+        shipping = null;
         cachedSelectedId = 'padrao';
         if (freightOptions) freightOptions.innerHTML = '';
         setHidden(freightOptions, true);
         setHidden(freightHint, true);
         setHidden(shippingTotal, true);
-        if (btnFinish) btnFinish.classList.add('hidden');
+        updateCheckoutActionPanel();
     };
 
     const calcShipping = () => {
@@ -1555,7 +1630,7 @@ function initCheckout() {
         setHidden(freightAddress, true);
         setHidden(freightOptions, true);
         setHidden(shippingTotal, true);
-        if (btnFinish) btnFinish.classList.add('hidden');
+        updateCheckoutActionPanel();
 
         if (summaryCep) summaryCep.textContent = formatCep(rawCep);
 
@@ -1620,6 +1695,7 @@ function initCheckout() {
                         btnCalcFreight.classList.remove('hidden');
                         btnCalcFreight.disabled = false;
                     }
+                    updateCheckoutActionPanel();
                 }, remaining);
             });
     };
@@ -1652,7 +1728,7 @@ function initCheckout() {
             }
             setHidden(shippingTotal, false);
         }
-        if (btnFinish) btnFinish.classList.remove('hidden');
+        updateCheckoutActionPanel();
     }
 
     if (!shipping) {
@@ -1669,6 +1745,8 @@ function initCheckout() {
             openFreightOptions(savedCepDigits, false);
         }
     }
+
+    updateCheckoutActionPanel();
 
     const syncShippingAfterAddressEdit = () => {
         const storedAddress = loadAddress();
@@ -1701,8 +1779,9 @@ function initCheckout() {
                 }
                 setHidden(shippingTotal, false);
             }
-            if (btnFinish) btnFinish.classList.remove('hidden');
             if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+            shipping = storedShipping;
+            updateCheckoutActionPanel();
             return;
         }
 
@@ -1714,6 +1793,7 @@ function initCheckout() {
             showFreightSelection();
         }
         if (btnCalcFreight) btnCalcFreight.classList.add('hidden');
+        updateCheckoutActionPanel();
     };
 
     const returnTo = getReturnTarget();
@@ -1726,11 +1806,25 @@ function initCheckout() {
         if (!btnFinish) return;
         if (!shipping) {
             showToast('Selecione um frete para continuar.', 'error');
+            freightCard?.classList.remove('freight-card--focus');
+            freightCard?.classList.add('freight-card--focus');
+            setTimeout(() => {
+                freightCard?.classList.remove('freight-card--focus');
+            }, 1100);
+            if (freightOptions && !freightOptions.classList.contains('hidden')) {
+                freightOptions.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else if (checkoutCep) {
+                checkoutCep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                checkoutCep.focus();
+            }
             return;
         }
         trackLead('checkout_submit', { stage: 'checkout', shipping });
-        btnFinish.disabled = true;
-        isOrderBumpEnabled()
+        const idleLabel = btnFinish.textContent;
+        checkoutSubmitting = true;
+        btnFinish.textContent = 'Processando...';
+        updateCheckoutActionPanel();
+        orderBumpEnabledPromise
             .then((enabled) => {
                 if (enabled) {
                     setStage('orderbump');
@@ -1741,10 +1835,14 @@ function initCheckout() {
                 showToast('Gerando pagamento...', 'success');
                 createPixCharge(shipping, 0).catch((error) => {
                     showToast(error.message || 'Erro ao gerar o PIX.', 'error');
-                    btnFinish.disabled = false;
+                    checkoutSubmitting = false;
+                    btnFinish.textContent = idleLabel;
+                    updateCheckoutActionPanel();
                 });
             })
             .catch(() => {
+                checkoutSubmitting = false;
+                btnFinish.textContent = idleLabel;
                 setStage('orderbump');
                 redirect('orderbump.html');
             });
@@ -1781,10 +1879,16 @@ function initOrderBump() {
     const btnDecline = document.getElementById('btn-bump-decline');
     const bumpTotal = document.getElementById('bump-total');
     const bumpMonthly = document.getElementById('bump-monthly');
+    const bumpWithoutTotal = document.getElementById('bump-without-total');
+    const bumpExtraPrice = document.getElementById('bump-extra-price');
     const bumpLoading = document.getElementById('bump-loading');
 
+    if (bumpWithoutTotal) bumpWithoutTotal.textContent = formatCurrency(shipping.price);
     if (bumpTotal) bumpTotal.textContent = formatCurrency(shipping.price + bumpPrice);
     if (bumpMonthly) bumpMonthly.textContent = formatCurrency(bumpPrice);
+    if (bumpExtraPrice) bumpExtraPrice.textContent = formatCurrency(bumpPrice);
+    if (btnAccept) btnAccept.textContent = `Adicionar Seguro Bag por ${formatCurrency(bumpPrice)} e continuar`;
+    if (btnDecline) btnDecline.textContent = `Continuar sem seguro (${formatCurrency(shipping.price)})`;
 
     const proceedToPix = (selected) => {
         if (btnAccept) btnAccept.disabled = true;
