@@ -87,6 +87,7 @@
                   <th>Telefone</th>
                   <th>Origem</th>
                   <th>Etapa</th>
+                  <th>Quiz</th>
                   <th>Status</th>
                   <th>Frete</th>
                   <th>Total</th>
@@ -102,9 +103,24 @@
     </main>
   </div>
 
+  <div id="quiz-lead-modal" class="admin-modal hidden" role="dialog" aria-modal="true" aria-labelledby="quiz-lead-modal-title">
+    <div class="admin-modal-card">
+      <button type="button" id="quiz-lead-modal-close" class="admin-modal-close" aria-label="Fechar detalhes do quiz">×</button>
+      <header class="admin-modal-head">
+        <h3 id="quiz-lead-modal-title">Respostas do Quiz</h3>
+        <p id="quiz-lead-modal-subtitle">Lead selecionado</p>
+      </header>
+      <div class="admin-quiz-meta">
+        <span id="quiz-lead-modal-count" class="admin-quiz-chip">0 respostas</span>
+        <span id="quiz-lead-modal-completed" class="admin-quiz-chip admin-quiz-chip--warn">Nao concluido</span>
+      </div>
+      <div id="quiz-lead-modal-timeline" class="admin-quiz-timeline"></div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/script.js?v=6.1" defer></script>
+  <script src="/script.js?v=6.5" defer></script>
 </body>
 </html>
 

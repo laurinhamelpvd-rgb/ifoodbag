@@ -2308,6 +2308,13 @@ function initAdmin() {
     const leadsMore = document.getElementById('leads-more');
     const leadsReconcile = document.getElementById('leads-reconcile');
     const leadsReconcileStatus = document.getElementById('leads-reconcile-status');
+    const quizLeadModal = document.getElementById('quiz-lead-modal');
+    const quizLeadModalClose = document.getElementById('quiz-lead-modal-close');
+    const quizLeadModalTitle = document.getElementById('quiz-lead-modal-title');
+    const quizLeadModalSubtitle = document.getElementById('quiz-lead-modal-subtitle');
+    const quizLeadModalCount = document.getElementById('quiz-lead-modal-count');
+    const quizLeadModalCompleted = document.getElementById('quiz-lead-modal-completed');
+    const quizLeadModalTimeline = document.getElementById('quiz-lead-modal-timeline');
     const metricTotal = document.getElementById('metric-total');
     const metricPix = document.getElementById('metric-pix');
     const metricFrete = document.getElementById('metric-frete');
@@ -2381,6 +2388,7 @@ function initAdmin() {
         upsell: { label: 'upsell.html', desc: 'Oferta de adiantamento de entrega' }
     };
     let currentSettings = null;
+    const leadRowsBySession = new Map();
 
     const hasPixelForm = !!(
         pixelEnabled || pixelId || pixelEventPage || pixelEventQuiz || pixelEventLead || pixelEventCheckout || pixelEventPurchase ||
@@ -2434,6 +2442,85 @@ function initAdmin() {
         if (normalized === 'ghostspay') return 'GhostsPay';
         if (normalized === 'sunize') return 'Sunize';
         return 'AtivusHUB';
+    };
+
+    const normalizeQuizAnswers = (row = {}) => {
+        const answers = Array.isArray(row?.quiz_answers) ? row.quiz_answers : [];
+        return answers
+            .filter((item) => item && typeof item === 'object')
+            .map((item) => {
+                const stepRaw = Number(item.step_index ?? item.stepIndex ?? 0);
+                return {
+                    questionId: String(item.question_id || item.questionId || '').trim(),
+                    questionText: String(item.question_text || item.questionText || '').trim(),
+                    answerText: String(item.answer_text || item.answerText || '').trim(),
+                    answerIcon: String(item.answer_icon || item.answerIcon || '').trim(),
+                    nextQuestionId: String(item.next_question_id || item.nextQuestionId || '').trim(),
+                    stepIndex: Number.isFinite(stepRaw) && stepRaw > 0 ? Math.floor(stepRaw) : null,
+                    answeredAt: String(item.answered_at || item.answeredAt || '').trim()
+                };
+            })
+            .filter((item) => item.questionId || item.questionText || item.answerText);
+    };
+
+    const renderQuizLeadModal = (row = {}) => {
+        if (!quizLeadModal || !quizLeadModalTimeline) return;
+        const answers = normalizeQuizAnswers(row);
+        const count = Number(row?.quiz_answers_count || answers.length || 0);
+        const completed = row?.quiz_completed === true;
+        const completedAt = row?.quiz_completed_at || '';
+        const leadName = String(row?.nome || '').trim() || 'Lead sem nome';
+        const leadSession = String(row?.session_id || '').trim();
+
+        if (quizLeadModalTitle) {
+            quizLeadModalTitle.textContent = `Respostas do quiz - ${leadName}`;
+        }
+        if (quizLeadModalSubtitle) {
+            quizLeadModalSubtitle.textContent = leadSession
+                ? `Sessao ${leadSession} | Ultimo evento: ${row?.evento || '-'}`
+                : `Ultimo evento: ${row?.evento || '-'}`;
+        }
+        if (quizLeadModalCount) {
+            quizLeadModalCount.textContent = `${count} resposta${count === 1 ? '' : 's'}`;
+        }
+        if (quizLeadModalCompleted) {
+            quizLeadModalCompleted.textContent = completed
+                ? `Concluido${completedAt ? ` em ${formatDateTime(completedAt)}` : ''}`
+                : 'Nao concluido';
+            quizLeadModalCompleted.classList.remove('admin-quiz-chip--ok', 'admin-quiz-chip--warn');
+            quizLeadModalCompleted.classList.add(completed ? 'admin-quiz-chip--ok' : 'admin-quiz-chip--warn');
+        }
+
+        if (!answers.length) {
+            quizLeadModalTimeline.innerHTML = '<div class="admin-quiz-empty">Esse lead ainda nao possui respostas registradas no quiz.</div>';
+        } else {
+            quizLeadModalTimeline.innerHTML = '';
+            answers.forEach((answer, index) => {
+                const item = document.createElement('article');
+                item.className = 'admin-quiz-item';
+                const stepLabel = answer.stepIndex ? `Pergunta ${answer.stepIndex}` : `Resposta ${index + 1}`;
+                const question = answer.questionText || answer.questionId || '-';
+                const answerValue = [answer.answerIcon, answer.answerText].filter(Boolean).join(' ').trim() || '-';
+                item.innerHTML = `
+                    <div class="admin-quiz-item-head">
+                        <span class="admin-quiz-item-step">${stepLabel}</span>
+                        <span class="admin-quiz-item-time">${formatDateTime(answer.answeredAt)}</span>
+                    </div>
+                    <strong class="admin-quiz-item-question">${question}</strong>
+                    <div class="admin-quiz-item-answer">${answerValue}</div>
+                `;
+                quizLeadModalTimeline.appendChild(item);
+            });
+        }
+
+        quizLeadModal.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+    };
+
+    const closeQuizLeadModal = () => {
+        if (!quizLeadModal) return;
+        quizLeadModal.classList.add('hidden');
+        document.body.classList.remove('modal-open');
     };
 
     const syncGatewaySwitchState = (input, label) => {
@@ -2820,6 +2907,10 @@ function initAdmin() {
         if (!append) leadsBody.innerHTML = '';
 
         rows.forEach((row) => {
+            const sessionId = String(row.session_id || '').trim();
+            if (sessionId) {
+                leadRowsBySession.set(sessionId, row);
+            }
             const tr = document.createElement('tr');
             const ev = String(row.evento || '').toLowerCase().trim();
             const isPaid = row.is_paid === true || ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
@@ -2835,12 +2926,17 @@ function initAdmin() {
             const statusClass = isPaid
                 ? 'status-pill--paid'
                 : (isPixGenerated ? 'status-pill--pix-created' : 'status-pill--neutral');
+            const quizCount = Number(row.quiz_answers_count || 0);
+            const quizButtonClass = quizCount > 0 ? 'admin-quiz-btn' : 'admin-quiz-btn admin-quiz-btn--empty';
+            const quizButtonLabel = quizCount > 0 ? `Ver (${quizCount})` : 'Sem respostas';
+            const quizButtonDisabled = quizCount > 0 ? '' : 'disabled';
             tr.innerHTML = `
                 <td>${row.nome || '-'}</td>
                 <td>${row.email || '-'}</td>
                 <td>${row.telefone || '-'}</td>
                 <td>${row.utm_source || '-'}</td>
                 <td>${row.etapa || '-'}</td>
+                <td><button type="button" class="${quizButtonClass}" data-quiz-lead="${row.session_id || ''}" ${quizButtonDisabled}>${quizButtonLabel}</button></td>
                 <td><span class="status-pill ${statusClass}">${statusLabel}</span></td>
                 <td>${row.frete || '-'}</td>
                 <td>${row.valor_total ? formatCurrency(row.valor_total) : '-'}</td>
@@ -2983,7 +3079,10 @@ function initAdmin() {
     const loadLeads = async ({ reset = false } = {}) => {
         if (loadingLeads) return;
         loadingLeads = true;
-        if (reset) offset = 0;
+        if (reset) {
+            offset = 0;
+            leadRowsBySession.clear();
+        }
 
         const query = leadsSearch?.value.trim() || '';
         const url = new URL('/api/admin/leads', window.location.origin);
@@ -3177,7 +3276,28 @@ function initAdmin() {
     leadsRefresh?.addEventListener('click', () => loadLeads({ reset: true }));
     leadsMore?.addEventListener('click', () => loadLeads({ reset: false }));
     leadsSearch?.addEventListener('change', () => loadLeads({ reset: true }));
+    leadsBody?.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest('[data-quiz-lead]') : null;
+        if (!target) return;
+        const sessionId = String(target.getAttribute('data-quiz-lead') || '').trim();
+        if (!sessionId) return;
+        const lead = leadRowsBySession.get(sessionId);
+        if (!lead) {
+            showToast('Lead nao encontrado na lista carregada.', 'error');
+            return;
+        }
+        renderQuizLeadModal(lead);
+    });
     leadsReconcile?.addEventListener('click', reconcilePix);
+    quizLeadModalClose?.addEventListener('click', closeQuizLeadModal);
+    quizLeadModal?.addEventListener('click', (event) => {
+        if (event.target === quizLeadModal) {
+            closeQuizLeadModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeQuizLeadModal();
+    });
     testPixelBtn?.addEventListener('click', runPixelTest);
     testUtmfyBtn?.addEventListener('click', runUtmfyTest);
     saleUtmfyBtn?.addEventListener('click', runUtmfySale);
@@ -3273,11 +3393,31 @@ function handleAnswer(btnElement, option, refs) {
     });
 
     btnElement.classList.add('selected');
-    trackLead('quiz_answer', { stage: 'quiz' });
+    const currentQuestion = questions[state.currentQuestionKey] || {};
+    trackLead('quiz_answer', {
+        stage: 'quiz',
+        quiz: {
+            questionId: String(currentQuestion.id || state.currentQuestionKey || '').trim(),
+            questionText: String(currentQuestion.text || '').trim(),
+            answerText: String(option?.text || '').trim(),
+            answerIcon: String(option?.icon || '').trim(),
+            nextQuestionId: String(option?.next || '').trim(),
+            stepIndex: Number(state.currentStepIndex || 0),
+            totalSteps: Number(Math.max(state.totalSteps || 0, state.currentStepIndex || 0)),
+            answeredAt: new Date().toISOString()
+        }
+    });
 
     setTimeout(() => {
         if (option.next === 'personal_step') {
-            trackLead('quiz_complete', { stage: 'quiz' });
+            trackLead('quiz_complete', {
+                stage: 'quiz',
+                quiz: {
+                    completed: true,
+                    completedAt: new Date().toISOString(),
+                    answeredCount: Number(Math.max(state.currentStepIndex || 0, 1))
+                }
+            });
             saveQuizComplete();
             setStage('personal');
             redirect('dados.html');
@@ -4001,6 +4141,7 @@ function trackLead(eventName, extra = {}) {
         shipping: extra.shipping || loadShipping() || {},
         bump: extra.bump || loadBump() || {},
         pix: extra.pix || loadPix() || {},
+        quiz: extra.quiz || {},
         amount: Number.isFinite(Number(extra.amount)) ? Number(extra.amount) : undefined,
         isUpsell: extra.isUpsell === true
     };

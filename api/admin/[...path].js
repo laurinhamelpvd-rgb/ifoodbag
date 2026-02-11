@@ -259,9 +259,64 @@ function gatewayConversionPercent(stats = {}) {
     return Math.round((paid / pix) * 100);
 }
 
+function normalizeQuizAnswerEntry(entry = {}) {
+    const source = asObject(entry);
+    const questionId = String(source.questionId || source.question_id || '').trim();
+    const questionText = String(source.questionText || source.question_text || '').trim();
+    const answerText = String(source.answerText || source.answer_text || source.text || '').trim();
+    const answeredAt = toIsoDate(source.answeredAt || source.answered_at) || null;
+    const stepRaw = Number(source.stepIndex ?? source.step ?? source.index);
+    const stepIndex = Number.isFinite(stepRaw) && stepRaw > 0 ? Math.floor(stepRaw) : null;
+    const nextQuestionId = String(source.nextQuestionId || source.next_question_id || '').trim();
+    const answerIcon = String(source.answerIcon || source.answer_icon || '').trim();
+    if (!questionId && !questionText && !answerText) return null;
+    return {
+        question_id: questionId || null,
+        question_text: questionText || null,
+        answer_text: answerText || null,
+        answer_icon: answerIcon || null,
+        next_question_id: nextQuestionId || null,
+        step_index: stepIndex,
+        answered_at: answeredAt
+    };
+}
+
+function extractQuizAnswers(payload = {}) {
+    const source = asObject(payload);
+    const quiz = asObject(source.quiz);
+    const candidates = [];
+    if (Array.isArray(source.quizAnswers)) candidates.push(...source.quizAnswers);
+    if (Array.isArray(quiz.answers)) candidates.push(...quiz.answers);
+    if (source.quizAnswer && typeof source.quizAnswer === 'object') candidates.push(source.quizAnswer);
+    return candidates
+        .map((item) => normalizeQuizAnswerEntry(item))
+        .filter(Boolean)
+        .sort((a, b) => {
+            const stepA = Number(a?.step_index || 0);
+            const stepB = Number(b?.step_index || 0);
+            if (stepA !== stepB) return stepA - stepB;
+            const dateA = new Date(String(a?.answered_at || 0)).getTime();
+            const dateB = new Date(String(b?.answered_at || 0)).getTime();
+            const safeA = Number.isFinite(dateA) ? dateA : 0;
+            const safeB = Number.isFinite(dateB) ? dateB : 0;
+            return safeA - safeB;
+        });
+}
+
 function mapLeadReadable(row) {
     const payload = asObject(row?.payload);
     const gateway = resolveLeadGateway(row, payload);
+    const quizAnswers = extractQuizAnswers(payload);
+    const quizProgress = asObject(payload?.quizProgress);
+    const quizCompleted = quizProgress?.completed === true || String(row?.last_event || '').trim().toLowerCase() === 'quiz_complete';
+    const quizCompletedAt = toIsoDate(
+        quizProgress?.completedAt ||
+        payload?.quiz?.completedAt
+    );
+    const quizLastAnsweredAt = toIsoDate(
+        quizProgress?.lastAnsweredAt ||
+        quizAnswers[quizAnswers.length - 1]?.answered_at
+    );
     const isPaid = isLeadPaid(row, payload);
     const isUpsell = Boolean(
         payload?.upsell?.enabled === true ||
@@ -312,6 +367,11 @@ function mapLeadReadable(row) {
         gclid: row?.gclid || '-',
         status_funil: statusFunil,
         is_paid: isPaid,
+        quiz_answers: quizAnswers,
+        quiz_answers_count: quizAnswers.length,
+        quiz_completed: quizCompleted,
+        quiz_completed_at: quizCompletedAt,
+        quiz_last_answered_at: quizLastAnsweredAt,
         updated_at: row?.updated_at || null,
         created_at: row?.created_at || null,
         event_time: resolveEventTime(row, payload)
