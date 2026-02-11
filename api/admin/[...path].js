@@ -281,16 +281,62 @@ function normalizeQuizAnswerEntry(entry = {}) {
     };
 }
 
+function looksLikeQuizAnswerObject(input = {}) {
+    const source = asObject(input);
+    return Boolean(
+        source.questionId ||
+        source.question_id ||
+        source.questionText ||
+        source.question_text ||
+        source.answerText ||
+        source.answer_text ||
+        source.answerId ||
+        source.answer_id ||
+        source.text
+    );
+}
+
 function extractQuizAnswers(payload = {}) {
     const source = asObject(payload);
     const quiz = asObject(source.quiz);
+    const raw = asObject(source.raw);
+    const rawQuiz = asObject(raw.quiz);
     const candidates = [];
+    const eventName = String(source.event || source.lastEvent || '').trim().toLowerCase();
+
     if (Array.isArray(source.quizAnswers)) candidates.push(...source.quizAnswers);
+    if (Array.isArray(source.quiz_answers)) candidates.push(...source.quiz_answers);
     if (Array.isArray(quiz.answers)) candidates.push(...quiz.answers);
+    if (Array.isArray(quiz.respostas)) candidates.push(...quiz.respostas);
     if (source.quizAnswer && typeof source.quizAnswer === 'object') candidates.push(source.quizAnswer);
-    return candidates
+    if (source.quiz_answer && typeof source.quiz_answer === 'object') candidates.push(source.quiz_answer);
+
+    if (looksLikeQuizAnswerObject(quiz)) candidates.push(quiz);
+    if (looksLikeQuizAnswerObject(rawQuiz)) candidates.push(rawQuiz);
+    if (eventName === 'quiz_answer' && looksLikeQuizAnswerObject(source.quiz)) {
+        candidates.push(source.quiz);
+    }
+
+    const deduped = candidates
         .map((item) => normalizeQuizAnswerEntry(item))
-        .filter(Boolean)
+        .filter(Boolean);
+
+    const byKey = new Map();
+    deduped.forEach((answer, index) => {
+        const questionId = String(answer?.question_id || '').trim().toLowerCase();
+        const questionText = String(answer?.question_text || '').trim().toLowerCase();
+        const answerText = String(answer?.answer_text || '').trim().toLowerCase();
+        const step = Number(answer?.step_index || 0);
+        const answeredAt = String(answer?.answered_at || '').trim();
+        const key = questionId
+            ? `id:${questionId}`
+            : questionText
+                ? `text:${questionText}:${step}:${answerText}`
+                : `fallback:${answeredAt || index}:${answerText}`;
+        byKey.set(key, answer);
+    });
+
+    return Array.from(byKey.values())
         .sort((a, b) => {
             const stepA = Number(a?.step_index || 0);
             const stepB = Number(b?.step_index || 0);
@@ -723,17 +769,22 @@ async function getQuizStats(req, res) {
         rows.forEach((row) => {
             const payload = asObject(row?.payload);
             const answers = extractQuizAnswers(payload);
+            const quizProgress = asObject(payload?.quizProgress || payload?.quiz_progress);
+            const answeredCountRaw = Number(quizProgress?.answeredCount ?? quizProgress?.answered_count ?? 0);
+            const answeredCount = Number.isFinite(answeredCountRaw) && answeredCountRaw > 0
+                ? Math.floor(answeredCountRaw)
+                : 0;
             const lastEvent = String(row?.last_event || '').trim().toLowerCase();
             const completed =
-                payload?.quizProgress?.completed === true ||
+                quizProgress?.completed === true ||
                 payload?.quiz?.completed === true ||
                 lastEvent === 'quiz_complete';
-            const hasQuizSignal = answers.length > 0 || lastEvent.includes('quiz');
+            const hasQuizSignal = answers.length > 0 || answeredCount > 0 || lastEvent === 'quiz_complete';
             if (!hasQuizSignal) return;
 
             leadsWithQuiz += 1;
             if (completed) leadsCompleted += 1;
-            totalAnswers += answers.length;
+            totalAnswers += answers.length > 0 ? answers.length : answeredCount;
 
             const updatedIso = toIsoDate(row?.updated_at);
             const currentTs = lastUpdated ? Date.parse(lastUpdated) : 0;
