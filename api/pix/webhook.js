@@ -805,10 +805,13 @@ module.exports = async (req, res) => {
             isUpsell: upsellEvent
         };
         const pushKind = upsellEvent ? 'upsell_pix_created' : 'pix_created';
+        const pushCreatedDedupeKey = txid
+            ? `pushcut:pix_created:${gateway}:${txid}`
+            : `pushcut:pix_created_fallback:${gateway}:${dedupeBase}`;
         const queued = await enqueueDispatch({
             channel: 'pushcut',
             kind: pushKind,
-            dedupeKey: `pushcut:pix_created_fallback:${gateway}:${dedupeBase}`,
+            dedupeKey: pushCreatedDedupeKey,
             payload: pushPayload
         }).catch(() => null);
         if (queued?.ok || queued?.fallback) {
