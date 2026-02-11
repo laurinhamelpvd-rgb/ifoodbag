@@ -183,7 +183,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupGlobalBackRedirect(page) {
-    if (!page || page === 'admin') return;
+    if (!page) {
+        const rawPath = String(window.location.pathname || '')
+            .trim()
+            .toLowerCase()
+            .replace(/^\/+|\/+$/g, '')
+            .replace(/\.html$/g, '');
+        const aliases = {
+            '': 'home',
+            index: 'home',
+            dados: 'personal',
+            endereco: 'cep',
+            processando: 'processing',
+            sucesso: 'success'
+        };
+        page = aliases[rawPath] || rawPath || 'home';
+    }
+    if (page === 'admin') return;
     if (window.__ifoodBackRedirectInit) return;
     window.__ifoodBackRedirectInit = true;
     if (window.__ifbEarlyRedirectTimer) {
@@ -192,7 +208,6 @@ function setupGlobalBackRedirect(page) {
     }
 
     let shownOfferLevel = 0;
-    let orderBumpBackHandled = false;
     let backAttemptTracked = false;
     let backAttemptAt = 0;
     const guardDepth = 12;
@@ -294,22 +309,6 @@ function setupGlobalBackRedirect(page) {
         backAttemptAt = now;
         ensureGuardEntry(true);
         markBackAttempt();
-
-        if (page === 'orderbump') {
-            if (orderBumpBackHandled) return;
-            orderBumpBackHandled = true;
-            const shipping = loadShipping();
-            trackLead('orderbump_back_skip', { stage: 'orderbump', shipping: shipping || {} });
-            saveBump({
-                selected: false,
-                price: 9.9,
-                title: 'Seguro Bag',
-                skippedByBack: true
-            });
-            setStage('checkout');
-            redirect(resolveTargetUrl());
-            return;
-        }
 
         if (shownOfferLevel >= 1 && (!canEscalateOffer || shownOfferLevel >= 2)) {
             redirect(resolveTargetUrl());
@@ -432,30 +431,6 @@ function setupExitGuard(page) {
 }
 
 function getBackRedirectOffer(page, level = 1) {
-    if (page === 'pix') {
-        return {
-            mode: 'pix-copy',
-            badge: 'Pagamento pendente',
-            title: 'Pagamento pendente no PIX',
-            message: 'Copie o código PIX agora para confirmar seu pedido sem perder prioridade.',
-            subtitle: 'Seu pedido continua reservado por poucos minutos',
-            cta: 'Copiar PIX e continuar',
-            shownEvent: 'pix_exit_offer_shown',
-            acceptEvent: 'pix_exit_offer_accept'
-        };
-    }
-    if (page === 'upsell') {
-        return {
-            mode: 'resume',
-            badge: 'Prioridade ativa',
-            title: 'Sua prioridade ainda está disponível',
-            message: 'Volte agora para manter seu lugar no próximo lote e concluir mais rápido.',
-            subtitle: 'A oferta pode expirar nesta sessão',
-            cta: 'Voltar e concluir agora',
-            shownEvent: 'upsell_exit_offer_shown',
-            acceptEvent: 'upsell_exit_offer_accept'
-        };
-    }
     if (Number(level || 1) >= 2) {
         return {
             mode: 'coupon',
@@ -468,6 +443,34 @@ function getBackRedirectOffer(page, level = 1) {
             acceptEvent: 'coupon_offer_boost_accept',
             couponCode: 'FRETE10',
             amountOff: 10
+        };
+    }
+    if (page === 'pix') {
+        return {
+            mode: 'coupon',
+            badge: 'Pagamento pendente',
+            title: 'Finalize agora e ganhe R$ 5,00 no frete',
+            message: 'Seu PIX ainda esta pendente. Liberamos um cupom para concluir agora sem perder prioridade.',
+            subtitle: 'Oferta valida apenas nesta sessao',
+            cta: 'Usar cupom de R$ 5 agora',
+            shownEvent: 'coupon_offer_shown',
+            acceptEvent: 'coupon_offer_accept',
+            couponCode: 'FRETE5',
+            amountOff: 5
+        };
+    }
+    if (page === 'upsell') {
+        return {
+            mode: 'coupon',
+            badge: 'Desconto exclusivo',
+            title: 'Volte agora com R$ 5,00 de desconto',
+            message: 'Ativamos um cupom para voce concluir sem perder a oferta desta sessao.',
+            subtitle: 'Cupom imediato para finalizar hoje',
+            cta: 'Usar cupom de R$ 5 agora',
+            shownEvent: 'coupon_offer_shown',
+            acceptEvent: 'coupon_offer_accept',
+            couponCode: 'FRETE5',
+            amountOff: 5
         };
     }
     return {
