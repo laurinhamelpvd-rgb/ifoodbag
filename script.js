@@ -184,14 +184,21 @@ function setupGlobalBackRedirect(page) {
     if (window.__ifoodBackRedirectInit) return;
     window.__ifoodBackRedirectInit = true;
 
-    let shownOffer = false;
+    let shownOfferLevel = 0;
     let orderBumpBackHandled = false;
     let backAttemptTracked = false;
     let backAttemptAt = 0;
     const guardDepth = 12;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const stateBase = { ifb: true, token: guardToken };
-    const offer = getBackRedirectOffer(page);
+    const firstOffer = getBackRedirectOffer(page, 1);
+    const secondOffer = getBackRedirectOffer(page, 2);
+    const canEscalateOffer = (
+        firstOffer.mode === 'coupon' &&
+        secondOffer.mode === 'coupon' &&
+        Number(secondOffer.amountOff || 0) > Number(firstOffer.amountOff || 0)
+    );
+    let activeOffer = firstOffer;
     let lastGuardAt = 0;
     const currentHash = window.location.hash || '';
     const legacyBackHash = /^#ifb-back-/i.test(currentHash);
@@ -213,21 +220,24 @@ function setupGlobalBackRedirect(page) {
     const couponMessage = modalEls.couponMessage;
     const couponBadge = modalEls.couponBadge;
     const couponSubtitle = modalEls.couponSubtitle;
-    if (couponBadge) {
-        couponBadge.textContent = offer.badge;
-    }
-    if (couponTitle) {
-        couponTitle.textContent = offer.title;
-    }
-    if (couponMessage) {
-        couponMessage.textContent = offer.message;
-    }
-    if (couponSubtitle) {
-        couponSubtitle.textContent = offer.subtitle;
-    }
-    if (btnApply) {
-        btnApply.textContent = offer.cta;
-    }
+    const applyOfferToModal = (offerConfig) => {
+        if (couponBadge) {
+            couponBadge.textContent = offerConfig.badge;
+        }
+        if (couponTitle) {
+            couponTitle.textContent = offerConfig.title;
+        }
+        if (couponMessage) {
+            couponMessage.textContent = offerConfig.message;
+        }
+        if (couponSubtitle) {
+            couponSubtitle.textContent = offerConfig.subtitle;
+        }
+        if (btnApply) {
+            btnApply.textContent = offerConfig.cta;
+        }
+    };
+    applyOfferToModal(activeOffer);
 
     const resolveTargetUrl = () => buildBackRedirectUrl(page);
     window.__ifbResolveBackRedirect = () => buildBackRedirectUrl(page);
@@ -238,13 +248,15 @@ function setupGlobalBackRedirect(page) {
         trackLead('backredirect_click', { stage: page });
     };
 
-    const showCouponModal = () => {
+    const showCouponModal = (offerConfig = activeOffer) => {
+        activeOffer = offerConfig;
+        applyOfferToModal(activeOffer);
         modal.classList.remove('hidden');
         modal.setAttribute('aria-hidden', 'false');
         modal.classList.remove('coupon-anim-in');
         void modal.offsetWidth;
         modal.classList.add('coupon-anim-in');
-        trackLead(offer.shownEvent, { stage: page });
+        trackLead(activeOffer.shownEvent, { stage: page, backOfferLevel: shownOfferLevel || 1 });
     };
 
     const hideCouponModal = () => {
@@ -297,12 +309,22 @@ function setupGlobalBackRedirect(page) {
             return;
         }
 
-        if (shownOffer) {
+        if (shownOfferLevel >= 1 && (!canEscalateOffer || shownOfferLevel >= 2)) {
             redirect(resolveTargetUrl());
             return;
         }
-        shownOffer = true;
-        showCouponModal();
+        if (shownOfferLevel === 1 && canEscalateOffer) {
+            shownOfferLevel = 2;
+            showCouponModal(secondOffer);
+            try {
+                history.pushState({ ...stateBase, step: guardDepth }, '', baseUrl);
+            } catch (_error) {
+                // Ignore browser-specific history restrictions.
+            }
+            return;
+        }
+        shownOfferLevel = 1;
+        showCouponModal(firstOffer);
         try {
             history.pushState({ ...stateBase, step: guardDepth }, '', baseUrl);
         } catch (_error) {
@@ -363,16 +385,25 @@ function setupGlobalBackRedirect(page) {
     if (btnApply) {
         btnApply.addEventListener('click', async () => {
             let copiedPix = false;
-            if (offer.mode === 'pix-copy') {
+            if (activeOffer.mode === 'pix-copy') {
                 copiedPix = await copyPixCodeFromField();
-            } else if (offer.mode === 'coupon') {
-                saveCoupon({ code: 'FRETE5', amountOff: 5, appliedAt: Date.now() });
+            } else if (activeOffer.mode === 'coupon') {
+                const amountOff = Number(activeOffer.amountOff || 5);
+                const safeAmountOff = Number.isFinite(amountOff) && amountOff > 0 ? amountOff : 5;
+                const couponCode = String(activeOffer.couponCode || (safeAmountOff >= 10 ? 'FRETE10' : 'FRETE5')).trim();
+                saveCoupon({
+                    code: couponCode || 'FRETE5',
+                    amountOff: safeAmountOff,
+                    appliedAt: Date.now(),
+                    source: 'backredirect',
+                    backOfferLevel: shownOfferLevel || 1
+                });
                 sessionStorage.setItem(STORAGE_KEYS.directCheckout, '1');
             }
             hideCouponModal();
-            trackLead(offer.acceptEvent, { stage: page, copiedPix });
-            if (offer.mode === 'pix-copy') return;
-            if (offer.mode === 'coupon') setStage('checkout');
+            trackLead(activeOffer.acceptEvent, { stage: page, copiedPix, backOfferLevel: shownOfferLevel || 1 });
+            if (activeOffer.mode === 'pix-copy') return;
+            if (activeOffer.mode === 'coupon') setStage('checkout');
             redirect(resolveTargetUrl());
         });
     }
@@ -398,7 +429,7 @@ function setupExitGuard(page) {
     });
 }
 
-function getBackRedirectOffer(page) {
+function getBackRedirectOffer(page, level = 1) {
     if (page === 'pix') {
         return {
             mode: 'pix-copy',
@@ -423,15 +454,31 @@ function getBackRedirectOffer(page) {
             acceptEvent: 'upsell_exit_offer_accept'
         };
     }
+    if (Number(level || 1) >= 2) {
+        return {
+            mode: 'coupon',
+            badge: 'Ultima chance',
+            title: 'Liberamos R$ 10,00 de desconto no frete',
+            message: 'Voce clicou em voltar de novo. Ativamos um cupom maior para concluir agora.',
+            subtitle: 'Cupom de R$ 10 valido apenas nesta sessao',
+            cta: 'Usar cupom de R$ 10 agora',
+            shownEvent: 'coupon_offer_boost_shown',
+            acceptEvent: 'coupon_offer_boost_accept',
+            couponCode: 'FRETE10',
+            amountOff: 10
+        };
+    }
     return {
         mode: 'coupon',
         badge: 'Cupom exclusivo',
         title: 'Desconto liberado no frete',
-        message: 'Você ganhou R$ 5,00 de desconto no frete da Bag.',
-        subtitle: 'Oferta válida agora nesta sessão',
+        message: 'Voce ganhou R$ 5,00 de desconto no frete da Bag.',
+        subtitle: 'Oferta valida agora nesta sessao',
         cta: 'Usar cupom e pagar mais barato',
         shownEvent: 'coupon_offer_shown',
-        acceptEvent: 'coupon_offer_accept'
+        acceptEvent: 'coupon_offer_accept',
+        couponCode: 'FRETE5',
+        amountOff: 5
     };
 }
 
