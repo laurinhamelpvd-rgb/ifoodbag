@@ -20,28 +20,40 @@ const {
     requestTransactionById: requestSunizeStatus
 } = require('../../lib/sunize-provider');
 const { getSunizeStatus } = require('../../lib/sunize-status');
+const {
+    requestCreateTransaction: requestParadiseCreate,
+    requestTransactionById: requestParadiseStatus,
+    resolvePostbackUrl: resolveParadisePostbackUrl
+} = require('../../lib/paradise-provider');
+const { getParadiseStatus } = require('../../lib/paradise-status');
 
 function resolveGateway(rawBody = {}, payments = {}) {
     const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
     const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
     const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
+    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
     const requested = normalizeGatewayId(rawBody.gateway || rawBody.paymentGateway || payments.activeGateway);
+    if (requested === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
+    if (requested === 'sunize' && sunizeEnabled) return 'sunize';
+    if (requested === 'paradise' && paradiseEnabled) return 'paradise';
     if (requested === 'ghostspay') {
-        if (ghostspayEnabled) return 'ghostspay';
         if (sunizeEnabled) return 'sunize';
-        return 'ativushub';
+        if (paradiseEnabled) return 'paradise';
+        return ativushubEnabled ? 'ativushub' : 'ghostspay';
     }
     if (requested === 'sunize') {
-        if (sunizeEnabled) return 'sunize';
         if (ghostspayEnabled) return 'ghostspay';
-        return 'ativushub';
+        if (paradiseEnabled) return 'paradise';
+        return ativushubEnabled ? 'ativushub' : 'sunize';
     }
-    if (!ativushubEnabled && ghostspayEnabled) {
-        return 'ghostspay';
+    if (requested === 'paradise') {
+        if (ghostspayEnabled) return 'ghostspay';
+        if (sunizeEnabled) return 'sunize';
+        return ativushubEnabled ? 'ativushub' : 'paradise';
     }
-    if (!ativushubEnabled && sunizeEnabled) {
-        return 'sunize';
-    }
+    if (!ativushubEnabled && ghostspayEnabled) return 'ghostspay';
+    if (!ativushubEnabled && sunizeEnabled) return 'sunize';
+    if (!ativushubEnabled && paradiseEnabled) return 'paradise';
     return 'ativushub';
 }
 
@@ -57,6 +69,10 @@ function hasSunizeCredentials(config = {}) {
         String(config.apiKey || '').trim() &&
         String(config.apiSecret || '').trim()
     );
+}
+
+function hasParadiseCredentials(config = {}) {
+    return Boolean(String(config.apiKey || '').trim());
 }
 
 function toE164Phone(value = '') {
@@ -255,6 +271,61 @@ function resolveSunizeResponse(data = {}) {
     return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status, externalId };
 }
 
+function resolveParadiseResponse(data = {}) {
+    const root = asObject(data);
+    const nested = asObject(root.data);
+    const txid = pickText(
+        root.transaction_id,
+        root.transactionId,
+        nested.transaction_id,
+        nested.transactionId,
+        root.id,
+        nested.id
+    );
+    const externalId = pickText(
+        root.id,
+        root.external_id,
+        root.externalId,
+        root.reference,
+        nested.id,
+        nested.external_id,
+        nested.externalId,
+        nested.reference
+    );
+    const paymentCode = pickText(
+        root.qr_code,
+        root.pix_code,
+        nested.qr_code,
+        nested.pix_code
+    );
+    const qrRaw = pickText(
+        root.qr_code_base64,
+        root.qrcode_base64,
+        root.qrCodeBase64,
+        nested.qr_code_base64,
+        nested.qrcode_base64,
+        nested.qrCodeBase64
+    );
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+    const status = pickText(root.status, nested.status, root.raw_status, nested.raw_status);
+    return {
+        txid: String(txid || '').trim(),
+        paymentCode: String(paymentCode || '').trim(),
+        paymentCodeBase64: String(paymentCodeBase64 || '').trim(),
+        paymentQrUrl: String(paymentQrUrl || '').trim(),
+        status: String(status || '').trim(),
+        externalId: String(externalId || '').trim()
+    };
+}
+
 function resolveAtivushubStatusResponse(data = {}) {
     const root = asObject(data);
     const nested = asObject(root.data);
@@ -428,6 +499,19 @@ async function hydratePixVisualByGateway(gateway, gatewayConfig, txid) {
             data: {}
         }));
         if (response?.ok) return resolveSunizeResponse(data || {});
+        return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
+    }
+
+    if (gateway === 'paradise') {
+        const quickConfig = {
+            ...gatewayConfig,
+            timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig?.timeoutMs || 12000), 3500))
+        };
+        const { response, data } = await requestParadiseStatus(quickConfig, txid).catch(() => ({
+            response: { ok: false },
+            data: {}
+        }));
+        if (response?.ok) return resolveParadiseResponse(data || {});
         return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
     }
 
@@ -835,6 +919,92 @@ module.exports = async (req, res) => {
                 paymentQrUrl = sunizeData.paymentQrUrl;
                 statusRaw = sunizeData.status;
                 externalId = sunizeData.externalId || externalId;
+            } else if (gateway === 'paradise') {
+                if (!hasParadiseCredentials(gatewayConfig)) {
+                    createInflightError = new Error('paradise_missing_credentials');
+                    return res.status(500).json({ error: 'Credenciais Paradise nao configuradas.' });
+                }
+
+                const paradiseReferenceBase = upsellEnabled ? `${orderId}-upsell` : orderId;
+                externalId = `${paradiseReferenceBase}-${Date.now()}`;
+
+                const paradisePayload = {
+                    amount: Math.max(1, Math.round(totalAmount * 100)),
+                    description: String(
+                        gatewayConfig.description ||
+                        (upsellEnabled ? 'Pedido iFood Bag - Upsell' : 'Pedido iFood Bag')
+                    ).trim(),
+                    reference: externalId,
+                    customer: {
+                        name,
+                        email,
+                        document: cpf,
+                        phone
+                    },
+                    postback_url: resolveParadisePostbackUrl(req, gatewayConfig),
+                    tracking: {
+                        gateway: 'paradise',
+                        orderId,
+                        sessionId: rawBody.sessionId || orderId,
+                        utm_source: rawBody?.utm?.utm_source || '',
+                        utm_medium: rawBody?.utm?.utm_medium || '',
+                        utm_campaign: rawBody?.utm?.utm_campaign || '',
+                        utm_term: rawBody?.utm?.utm_term || '',
+                        utm_content: rawBody?.utm?.utm_content || '',
+                        src: rawBody?.utm?.src || '',
+                        sck: rawBody?.utm?.sck || '',
+                        fbclid: rawBody?.utm?.fbclid || rawBody?.fbclid || '',
+                        gclid: rawBody?.utm?.gclid || '',
+                        ttclid: rawBody?.utm?.ttclid || ''
+                    }
+                };
+                if (String(gatewayConfig.productHash || '').trim()) {
+                    paradisePayload.productHash = String(gatewayConfig.productHash).trim();
+                } else {
+                    paradisePayload.source = String(gatewayConfig.source || 'api_externa').trim() || 'api_externa';
+                }
+                if (normalizedBump.selected && String(gatewayConfig.orderbumpHash || '').trim()) {
+                    paradisePayload.orderbump = String(gatewayConfig.orderbumpHash).trim();
+                }
+
+                ({ response, data } = await requestParadiseCreate(gatewayConfig, paradisePayload));
+                if (!response?.ok || data?.success === false || String(data?.status || '').toLowerCase() === 'error') {
+                    createInflightError = new Error('paradise_create_failed');
+                    return res.status(response?.status || 502).json({
+                        error: 'Falha ao gerar o PIX.',
+                        detail: data
+                    });
+                }
+
+                const paradiseData = resolveParadiseResponse(data);
+                txid = paradiseData.txid;
+                paymentCode = paradiseData.paymentCode;
+                paymentCodeBase64 = paradiseData.paymentCodeBase64;
+                paymentQrUrl = paradiseData.paymentQrUrl;
+                statusRaw = paradiseData.status || getParadiseStatus(data);
+                externalId = paradiseData.externalId || externalId;
+
+                if (txid && !paymentCode && !paymentCodeBase64 && !paymentQrUrl) {
+                    const quickStatusTimeout = Math.max(
+                        650,
+                        Math.min(Number(gatewayConfig.timeoutMs || 12000), 900)
+                    );
+                    const quickConfig = {
+                        ...gatewayConfig,
+                        timeoutMs: quickStatusTimeout
+                    };
+                    const quickStatus = await requestParadiseStatus(quickConfig, txid).catch(() => ({
+                        response: { ok: false },
+                        data: {}
+                    }));
+                    if (quickStatus?.response?.ok) {
+                        const fromStatus = resolveParadiseResponse(quickStatus.data || {});
+                        paymentCode = paymentCode || fromStatus.paymentCode;
+                        paymentCodeBase64 = paymentCodeBase64 || fromStatus.paymentCodeBase64;
+                        paymentQrUrl = paymentQrUrl || fromStatus.paymentQrUrl;
+                        statusRaw = statusRaw || fromStatus.status;
+                    }
+                }
             } else {
                 if (!String(gatewayConfig.apiKeyBase64 || '').trim()) {
                     createInflightError = new Error('ativushub_missing_credentials');

@@ -40,6 +40,18 @@ const {
     isSunizeRefusedStatus,
     mapSunizeStatusToUtmify
 } = require('../../lib/sunize-status');
+const {
+    getParadiseTxid,
+    getParadiseExternalId,
+    getParadiseStatus,
+    getParadiseUpdatedAt,
+    getParadiseAmount,
+    isParadisePaidStatus,
+    isParadiseRefundedStatus,
+    isParadiseChargebackStatus,
+    isParadiseRefusedStatus,
+    mapParadiseStatusToUtmify
+} = require('../../lib/paradise-status');
 
 function normalizeDate(value) {
     if (!value && value !== 0) return null;
@@ -183,6 +195,17 @@ function looksLikeSunizeWebhook(payload = {}) {
     return hasTx && hasStatus && (hasPaymentMethod || hasExternalId);
 }
 
+function looksLikeParadiseWebhook(payload = {}) {
+    const hasTx = !!String(payload?.transaction_id || payload?.transactionId || '').trim();
+    const hasExternal = !!String(payload?.external_id || payload?.externalId || '').trim();
+    const hasStatus = !!String(payload?.status || payload?.raw_status || '').trim();
+    const hasMarker =
+        Object.prototype.hasOwnProperty.call(payload || {}, 'pix_code') ||
+        Object.prototype.hasOwnProperty.call(payload || {}, 'webhook_type') ||
+        Object.prototype.hasOwnProperty.call(payload || {}, 'tracking');
+    return hasStatus && (hasTx || hasExternal) && (hasMarker || hasTx);
+}
+
 function normalizeMoneyToBrl(value) {
     if (value === undefined || value === null || value === '') return 0;
     const raw = String(value).trim();
@@ -271,6 +294,90 @@ function extractGatewayEvent(gateway, body = {}) {
                 fbclid: String(metadata?.fbclid || '').trim(),
                 gclid: String(metadata?.gclid || '').trim(),
                 ttclid: String(metadata?.ttclid || '').trim()
+            }
+        };
+    }
+
+    if (gateway === 'paradise') {
+        const txid = getParadiseTxid(body);
+        const statusRaw = getParadiseStatus(body);
+        const utmifyStatus = mapParadiseStatusToUtmify(statusRaw);
+        const isPaid = isParadisePaidStatus(statusRaw);
+        const isRefunded = isParadiseRefundedStatus(statusRaw);
+        const isRefused = isParadiseRefusedStatus(statusRaw) || isParadiseChargebackStatus(statusRaw);
+        const amount = getParadiseAmount(body);
+        const metadata = asObject(body?.metadata);
+        const tracking = asObject(body?.tracking);
+        const customer = asObject(body?.customer);
+        const sessionOrderId = String(
+            getParadiseExternalId(body) ||
+            metadata?.orderId ||
+            tracking?.orderId ||
+            ''
+        ).trim();
+        const statusChangedAt =
+            normalizeDate(getParadiseUpdatedAt(body)) ||
+            normalizeDate(body?.timestamp) ||
+            normalizeDate(body?.updated_at) ||
+            new Date().toISOString();
+        const pixCreatedAtFromGateway =
+            normalizeDate(body?.created_at) ||
+            normalizeDate(body?.createdAt) ||
+            null;
+        const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
+        const gatewayFee = normalizeMoneyToBrl(
+            body?.fee ||
+            body?.gateway_fee ||
+            body?.gatewayFee ||
+            0
+        );
+        const userCommission = Math.max(0, Number((amount - gatewayFee).toFixed(2)));
+
+        return {
+            gateway,
+            txid,
+            statusRaw,
+            utmifyStatus,
+            isPaid,
+            isRefunded,
+            isRefused,
+            amount,
+            gatewayFee,
+            userCommission,
+            sessionOrderId,
+            statusChangedAt,
+            pixCreatedAtFromGateway,
+            lastEvent,
+            webhookEventId: String(body?.webhook_id || body?.event_id || '').trim(),
+            fallbackIdentity: {
+                cpf: String(customer?.document || '').trim(),
+                email: String(customer?.email || '').trim(),
+                phone: String(customer?.phone || '').trim()
+            },
+            fallbackPersonal: {
+                name: String(customer?.name || '').trim(),
+                email: String(customer?.email || '').trim(),
+                cpf: String(customer?.document || '').trim(),
+                phone: String(customer?.phone || '').trim()
+            },
+            fallbackAddress: {
+                street: '',
+                neighborhood: '',
+                city: '',
+                state: '',
+                cep: ''
+            },
+            fallbackUtm: {
+                utm_source: String(tracking?.utm_source || metadata?.utm_source || '').trim(),
+                utm_medium: String(tracking?.utm_medium || metadata?.utm_medium || '').trim(),
+                utm_campaign: String(tracking?.utm_campaign || metadata?.utm_campaign || '').trim(),
+                utm_term: String(tracking?.utm_term || metadata?.utm_term || '').trim(),
+                utm_content: String(tracking?.utm_content || metadata?.utm_content || '').trim(),
+                src: String(tracking?.src || metadata?.src || '').trim(),
+                sck: String(tracking?.sck || metadata?.sck || '').trim(),
+                fbclid: String(tracking?.fbclid || metadata?.fbclid || '').trim(),
+                gclid: String(tracking?.gclid || metadata?.gclid || '').trim(),
+                ttclid: String(tracking?.ttclid || metadata?.ttclid || '').trim()
             }
         };
     }
@@ -439,19 +546,24 @@ function resolveWebhookGateway(query = {}, body = {}, payments = {}) {
     const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
     const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
     const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
+    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
     const requested = normalizeGatewayId(query.gateway || query.provider || body.gateway || body.provider);
     if (requested === 'sunize' && sunizeEnabled) return 'sunize';
     if (requested === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
+    if (requested === 'paradise' && paradiseEnabled) return 'paradise';
     if (looksLikeSunizeWebhook(body) && sunizeEnabled) return 'sunize';
+    if (looksLikeParadiseWebhook(body) && paradiseEnabled) return 'paradise';
     if (looksLikeGhostspayWebhook(body) && ghostspayEnabled) return 'ghostspay';
     if (looksLikeAtivusWebhook(body)) return 'ativushub';
 
     const active = normalizeGatewayId(payments.activeGateway || 'ativushub');
     if (active === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
     if (active === 'sunize' && sunizeEnabled) return 'sunize';
+    if (active === 'paradise' && paradiseEnabled) return 'paradise';
     if (active === 'ativushub' && ativushubEnabled) return 'ativushub';
     if (ghostspayEnabled) return 'ghostspay';
     if (sunizeEnabled) return 'sunize';
+    if (paradiseEnabled) return 'paradise';
     return 'ativushub';
 }
 
@@ -687,6 +799,9 @@ module.exports = async (req, res) => {
         String(
             leadData?.session_id ||
             sessionOrderId ||
+            body?.external_id ||
+            body?.externalId ||
+            body?.tracking?.orderId ||
             body?.metadata?.orderId ||
             body?.orderId ||
             txid ||
@@ -800,6 +915,9 @@ module.exports = async (req, res) => {
         const orderIdForPush = String(
             leadData?.session_id ||
             sessionOrderId ||
+            body?.external_id ||
+            body?.externalId ||
+            body?.tracking?.orderId ||
             body?.metadata?.orderId ||
             body?.orderId ||
             ''
@@ -835,6 +953,9 @@ module.exports = async (req, res) => {
         const orderIdForPush = String(
             leadData?.session_id ||
             sessionOrderId ||
+            body?.external_id ||
+            body?.externalId ||
+            body?.tracking?.orderId ||
             body?.metadata?.orderId ||
             body?.orderId ||
             ''

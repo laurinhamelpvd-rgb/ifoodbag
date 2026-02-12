@@ -3,6 +3,10 @@ const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/
 const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
 const { requestTransactionById: requestSunizeStatus } = require('../../lib/sunize-provider');
 const {
+    requestTransactionById: requestParadiseStatus,
+    requestTransactionByReference: requestParadiseByReference
+} = require('../../lib/paradise-provider');
+const {
     normalizeGatewayId,
     resolveGatewayFromPayload
 } = require('../../lib/payment-gateway-config');
@@ -31,6 +35,15 @@ const {
     isSunizeRefusedStatus,
     mapSunizeStatusToUtmify
 } = require('../../lib/sunize-status');
+const {
+    getParadiseStatus,
+    getParadiseUpdatedAt,
+    isParadisePaidStatus,
+    isParadiseRefundedStatus,
+    isParadiseChargebackStatus,
+    isParadiseRefusedStatus,
+    mapParadiseStatusToUtmify
+} = require('../../lib/paradise-status');
 const {
     getLeadByPixTxid,
     getLeadBySessionId,
@@ -114,6 +127,7 @@ function extractPixFieldsForStatus(gateway, payload = {}) {
 
     const isGhost = gateway === 'ghostspay';
     const isSunize = gateway === 'sunize';
+    const isParadise = gateway === 'paradise';
     let paymentCode = '';
     let qrRaw = '';
     let paymentQrUrl = '';
@@ -177,6 +191,21 @@ function extractPixFieldsForStatus(gateway, payload = {}) {
             pix.qrCodeUrl,
             pix.qr_code_url
         );
+    } else if (isParadise) {
+        paymentCode = pickText(
+            root.qr_code,
+            root.pix_code,
+            nested.qr_code,
+            nested.pix_code
+        );
+        qrRaw = pickText(
+            root.qr_code_base64,
+            root.qrcode_base64,
+            root.qrCodeBase64,
+            nested.qr_code_base64,
+            nested.qrcode_base64,
+            nested.qrCodeBase64
+        );
     } else {
         paymentCode = pickText(root.paymentCode, root.paymentcode, nested.paymentCode, nested.paymentcode);
         qrRaw = pickText(root.paymentCodeBase64, root.paymentcodebase64, nested.paymentCodeBase64, nested.paymentcodebase64);
@@ -219,6 +248,9 @@ function mapGatewayStatusToFrontend(gateway, statusRaw) {
     }
     if (gateway === 'sunize') {
         return mapUtmifyStatusToFrontend(mapSunizeStatusToUtmify(statusRaw));
+    }
+    if (gateway === 'paradise') {
+        return mapUtmifyStatusToFrontend(mapParadiseStatusToUtmify(statusRaw));
     }
     return mapUtmifyStatusToFrontend(mapAtivusStatusToUtmify(statusRaw));
 }
@@ -283,6 +315,7 @@ function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
     const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
     const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
     const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
+    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
     const requested = normalizeGatewayId(body.gateway || body.paymentGateway || body.provider || '');
     if (requested === 'ghostspay' && ghostspayEnabled) {
         return 'ghostspay';
@@ -290,11 +323,17 @@ function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
     if (requested === 'sunize' && sunizeEnabled) {
         return 'sunize';
     }
+    if (requested === 'paradise' && paradiseEnabled) {
+        return 'paradise';
+    }
     if (requested === 'ativushub' && !ativushubEnabled && ghostspayEnabled) {
         return 'ghostspay';
     }
     if (requested === 'ativushub' && !ativushubEnabled && sunizeEnabled) {
         return 'sunize';
+    }
+    if (requested === 'ativushub' && !ativushubEnabled && paradiseEnabled) {
+        return 'paradise';
     }
 
     const payload = asObject(leadData?.payload);
@@ -305,11 +344,17 @@ function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
     if (fromLead === 'sunize' && sunizeEnabled) {
         return 'sunize';
     }
+    if (fromLead === 'paradise' && paradiseEnabled) {
+        return 'paradise';
+    }
     if (!ativushubEnabled && ghostspayEnabled) {
         return 'ghostspay';
     }
     if (!ativushubEnabled && sunizeEnabled) {
         return 'sunize';
+    }
+    if (!ativushubEnabled && paradiseEnabled) {
+        return 'paradise';
     }
     return 'ativushub';
 }
@@ -335,6 +380,8 @@ module.exports = async (req, res) => {
 
     const txid = String(
         body?.txid ||
+        body?.transaction_id ||
+        body?.transactionId ||
         body?.idTransaction ||
         body?.idtransaction ||
         body?.id_transaction ||
@@ -366,7 +413,11 @@ module.exports = async (req, res) => {
             2500,
             Math.min(
                 Number(gatewayConfig?.timeoutMs || 12000),
-                gateway === 'ghostspay' ? 6500 : 7000
+                gateway === 'ghostspay'
+                    ? 6500
+                    : gateway === 'paradise'
+                        ? 7000
+                        : 7000
             )
         )
     };
@@ -466,6 +517,55 @@ module.exports = async (req, res) => {
             toIsoDate(data?.paidAt) ||
             new Date().toISOString();
         ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
+    } else if (gateway === 'paradise') {
+        ({ response, data } = await requestParadiseStatus(statusGatewayConfig, txid));
+        if (!response?.ok) {
+            const status = Number(response?.status || 0);
+            const leadPayload = asObject(leadData?.payload);
+            const externalRef = String(
+                leadPayload?.pixExternalId ||
+                leadPayload?.pix?.externalId ||
+                ''
+            ).trim();
+            if (status === 404 && externalRef) {
+                const byRef = await requestParadiseByReference(statusGatewayConfig, externalRef).catch(() => null);
+                if (byRef?.response?.ok) {
+                    response = byRef.response;
+                    data = Array.isArray(byRef.data) ? (byRef.data[0] || {}) : (byRef.data || {});
+                }
+            }
+            if (!response?.ok) {
+                res.status(status === 404 ? 200 : 502).json({
+                    ok: status === 404,
+                    status: leadStatus.status || 'waiting_payment',
+                    statusRaw: leadStatus.statusRaw || '',
+                    txid,
+                    gateway,
+                    source: 'database_fallback',
+                    detail: data?.error || data?.message || ''
+                });
+                return;
+            }
+        }
+        if (Array.isArray(data)) {
+            data = data[0] || {};
+        }
+
+        statusRaw = getParadiseStatus(data);
+        const mapped = mapParadiseStatusToUtmify(statusRaw);
+        nextStatus = isParadisePaidStatus(statusRaw)
+            ? 'paid'
+            : isParadiseRefundedStatus(statusRaw)
+                ? 'refunded'
+                : (isParadiseRefusedStatus(statusRaw) || isParadiseChargebackStatus(statusRaw))
+                    ? 'refused'
+                    : mapUtmifyStatusToFrontend(mapped);
+        changedAtIso =
+            toIsoDate(getParadiseUpdatedAt(data)) ||
+            toIsoDate(data?.timestamp) ||
+            toIsoDate(data?.updated_at) ||
+            new Date().toISOString();
+        ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
     } else {
         ({ response, data } = await requestAtivushubStatus(statusGatewayConfig, txid));
         if (!response?.ok) {
@@ -544,7 +644,11 @@ module.exports = async (req, res) => {
             : 0;
         const amountFromGateway = normalizeMoneyToBrl(
             data?.amount ||
+            data?.amount_in_reais ||
+            data?.amountInReais ||
             data?.data?.amount ||
+            data?.data?.amount_in_reais ||
+            data?.data?.amountInReais ||
             data?.total_amount ||
             data?.totalAmount ||
             data?.valor_bruto ||
@@ -588,6 +692,16 @@ module.exports = async (req, res) => {
                 data?.fee ||
                 data?.data?.gatewayFee ||
                 data?.data?.fee ||
+                0
+            );
+        } else if (gateway === 'paradise') {
+            gatewayFee = normalizeMoneyToBrl(
+                data?.fee ||
+                data?.gateway_fee ||
+                data?.gatewayFee ||
+                data?.data?.fee ||
+                data?.data?.gateway_fee ||
+                data?.data?.gatewayFee ||
                 0
             );
         } else if (gateway === 'ativushub') {

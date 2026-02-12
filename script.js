@@ -2653,9 +2653,17 @@ function initAdmin() {
     const gatewaySunizeBaseUrl = document.getElementById('gateway-sunize-base-url');
     const gatewaySunizeApiKey = document.getElementById('gateway-sunize-api-key');
     const gatewaySunizeApiSecret = document.getElementById('gateway-sunize-api-secret');
+    const gatewayParadiseEnabled = document.getElementById('gateway-paradise-enabled');
+    const gatewayParadiseBaseUrl = document.getElementById('gateway-paradise-base-url');
+    const gatewayParadiseApiKey = document.getElementById('gateway-paradise-api-key');
+    const gatewayParadiseProductHash = document.getElementById('gateway-paradise-product-hash');
+    const gatewayParadiseOrderbumpHash = document.getElementById('gateway-paradise-orderbump-hash');
+    const gatewayParadiseSource = document.getElementById('gateway-paradise-source');
+    const gatewayParadiseDescription = document.getElementById('gateway-paradise-description');
     const gatewayAtivushubState = document.getElementById('gateway-ativushub-state');
     const gatewayGhostspayState = document.getElementById('gateway-ghostspay-state');
     const gatewaySunizeState = document.getElementById('gateway-sunize-state');
+    const gatewayParadiseState = document.getElementById('gateway-paradise-state');
     const gatewayCards = Array.from(document.querySelectorAll('[data-gateway-card]'));
     const gatewayConfigToggles = Array.from(document.querySelectorAll('[data-gateway-config-toggle]'));
 
@@ -2686,6 +2694,8 @@ function initAdmin() {
     const metricGatewayGhostspayDetail = document.getElementById('metric-gateway-ghostspay-detail');
     const metricGatewaySunizeConv = document.getElementById('metric-gateway-sunize-conv');
     const metricGatewaySunizeDetail = document.getElementById('metric-gateway-sunize-detail');
+    const metricGatewayParadiseConv = document.getElementById('metric-gateway-paradise-conv');
+    const metricGatewayParadiseDetail = document.getElementById('metric-gateway-paradise-detail');
     const funnelPix = document.getElementById('funnel-pix');
     const funnelFrete = document.getElementById('funnel-frete');
     const funnelCep = document.getElementById('funnel-cep');
@@ -2726,7 +2736,8 @@ function initAdmin() {
         gatewayStats: {
             ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
-            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            paradise: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
         }
     };
     const funnelPageMeta = {
@@ -2776,7 +2787,14 @@ function initAdmin() {
         gatewaySunizeEnabled ||
         gatewaySunizeBaseUrl ||
         gatewaySunizeApiKey ||
-        gatewaySunizeApiSecret
+        gatewaySunizeApiSecret ||
+        gatewayParadiseEnabled ||
+        gatewayParadiseBaseUrl ||
+        gatewayParadiseApiKey ||
+        gatewayParadiseProductHash ||
+        gatewayParadiseOrderbumpHash ||
+        gatewayParadiseSource ||
+        gatewayParadiseDescription
     );
     const hasFeatureForm = !!featureOrderbump;
     const wantsLeads = !!(leadsBody || metricTotal || metricPix || metricFrete || metricCep);
@@ -2787,6 +2805,7 @@ function initAdmin() {
         const normalized = String(value || '').trim().toLowerCase();
         if (normalized === 'ghostspay') return 'ghostspay';
         if (normalized === 'sunize') return 'sunize';
+        if (normalized === 'paradise') return 'paradise';
         return 'ativushub';
     };
 
@@ -2794,6 +2813,7 @@ function initAdmin() {
         const normalized = normalizeGatewayKey(gateway);
         if (normalized === 'ghostspay') return 'GhostsPay';
         if (normalized === 'sunize') return 'Sunize';
+        if (normalized === 'paradise') return 'Paradise';
         return 'AtivusHUB';
     };
 
@@ -2818,6 +2838,7 @@ function initAdmin() {
         syncGatewaySwitchState(gatewayAtivushubEnabled, gatewayAtivushubState);
         syncGatewaySwitchState(gatewayGhostspayEnabled, gatewayGhostspayState);
         syncGatewaySwitchState(gatewaySunizeEnabled, gatewaySunizeState);
+        syncGatewaySwitchState(gatewayParadiseEnabled, gatewayParadiseState);
     };
 
     const setCurrentGatewayCard = (gateway) => {
@@ -2908,6 +2929,7 @@ function initAdmin() {
             const ativushub = gateways.ativushub || {};
             const ghostspay = gateways.ghostspay || {};
             const sunize = gateways.sunize || {};
+            const paradise = gateways.paradise || {};
             const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ativushub');
 
             if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
@@ -2926,6 +2948,13 @@ function initAdmin() {
             if (gatewaySunizeBaseUrl) gatewaySunizeBaseUrl.value = sunize.baseUrl || '';
             if (gatewaySunizeApiKey) gatewaySunizeApiKey.value = sunize.apiKey || '';
             if (gatewaySunizeApiSecret) gatewaySunizeApiSecret.value = sunize.apiSecret || '';
+            if (gatewayParadiseEnabled) gatewayParadiseEnabled.checked = !!paradise.enabled;
+            if (gatewayParadiseBaseUrl) gatewayParadiseBaseUrl.value = paradise.baseUrl || '';
+            if (gatewayParadiseApiKey) gatewayParadiseApiKey.value = paradise.apiKey || '';
+            if (gatewayParadiseProductHash) gatewayParadiseProductHash.value = paradise.productHash || '';
+            if (gatewayParadiseOrderbumpHash) gatewayParadiseOrderbumpHash.value = paradise.orderbumpHash || '';
+            if (gatewayParadiseSource) gatewayParadiseSource.value = paradise.source || '';
+            if (gatewayParadiseDescription) gatewayParadiseDescription.value = paradise.description || '';
 
             syncGatewaySwitches();
             setCurrentGatewayCard(activeGateway);
@@ -3035,6 +3064,16 @@ function initAdmin() {
                         baseUrl: gatewaySunizeBaseUrl?.value?.trim() || '',
                         apiKey: gatewaySunizeApiKey?.value?.trim() || '',
                         apiSecret: gatewaySunizeApiSecret?.value?.trim() || ''
+                    },
+                    paradise: {
+                        ...(currentSettings?.payments?.gateways?.paradise || {}),
+                        enabled: !!gatewayParadiseEnabled?.checked,
+                        baseUrl: gatewayParadiseBaseUrl?.value?.trim() || '',
+                        apiKey: gatewayParadiseApiKey?.value?.trim() || '',
+                        productHash: gatewayParadiseProductHash?.value?.trim() || '',
+                        orderbumpHash: gatewayParadiseOrderbumpHash?.value?.trim() || '',
+                        source: gatewayParadiseSource?.value?.trim() || '',
+                        description: gatewayParadiseDescription?.value?.trim() || ''
                     }
                 }
             };
@@ -3227,7 +3266,8 @@ function initAdmin() {
         const emptyGatewayStats = () => ({
             ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
-            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
+            sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
+            paradise: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
         });
 
         if (summary && typeof summary === 'object') {
@@ -3251,6 +3291,10 @@ function initAdmin() {
                 sunize: {
                     ...base.sunize,
                     ...(source.sunize || {})
+                },
+                paradise: {
+                    ...base.paradise,
+                    ...(source.paradise || {})
                 }
             };
         } else {
@@ -3315,9 +3359,11 @@ function initAdmin() {
         const ativusStats = metrics.gatewayStats.ativushub || { pix: 0, paid: 0 };
         const ghostStats = metrics.gatewayStats.ghostspay || { pix: 0, paid: 0 };
         const sunizeStats = metrics.gatewayStats.sunize || { pix: 0, paid: 0 };
+        const paradiseStats = metrics.gatewayStats.paradise || { pix: 0, paid: 0 };
         const ativusConv = ativusStats.pix ? Math.round((Number(ativusStats.paid || 0) / Number(ativusStats.pix || 0)) * 100) : 0;
         const ghostConv = ghostStats.pix ? Math.round((Number(ghostStats.paid || 0) / Number(ghostStats.pix || 0)) * 100) : 0;
         const sunizeConv = sunizeStats.pix ? Math.round((Number(sunizeStats.paid || 0) / Number(sunizeStats.pix || 0)) * 100) : 0;
+        const paradiseConv = paradiseStats.pix ? Math.round((Number(paradiseStats.paid || 0) / Number(paradiseStats.pix || 0)) * 100) : 0;
 
         if (metricGatewayAtivushubConv) metricGatewayAtivushubConv.textContent = `${ativusConv}%`;
         if (metricGatewayAtivushubDetail) {
@@ -3331,12 +3377,17 @@ function initAdmin() {
         if (metricGatewaySunizeDetail) {
             metricGatewaySunizeDetail.textContent = `${Number(sunizeStats.paid || 0)} pagos / ${Number(sunizeStats.pix || 0)} PIX`;
         }
+        if (metricGatewayParadiseConv) metricGatewayParadiseConv.textContent = `${paradiseConv}%`;
+        if (metricGatewayParadiseDetail) {
+            metricGatewayParadiseDetail.textContent = `${Number(paradiseStats.paid || 0)} pagos / ${Number(paradiseStats.pix || 0)} PIX`;
+        }
 
         if (metricBestGateway) {
             const options = [
                 { label: 'AtivusHUB', conv: ativusConv, paid: Number(ativusStats.paid || 0), pix: Number(ativusStats.pix || 0) },
                 { label: 'GhostsPay', conv: ghostConv, paid: Number(ghostStats.paid || 0), pix: Number(ghostStats.pix || 0) },
-                { label: 'Sunize', conv: sunizeConv, paid: Number(sunizeStats.paid || 0), pix: Number(sunizeStats.pix || 0) }
+                { label: 'Sunize', conv: sunizeConv, paid: Number(sunizeStats.paid || 0), pix: Number(sunizeStats.pix || 0) },
+                { label: 'Paradise', conv: paradiseConv, paid: Number(paradiseStats.paid || 0), pix: Number(paradiseStats.pix || 0) }
             ].filter((item) => item.pix > 0);
             if (!options.length) {
                 metricBestGateway.textContent = '-';
@@ -3567,6 +3618,7 @@ function initAdmin() {
     gatewayAtivushubEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayGhostspayEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewaySunizeEnabled?.addEventListener('change', syncGatewaySwitches);
+    gatewayParadiseEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayConfigToggles.forEach((button) => {
         button.addEventListener('click', () => {
             const gateway = button.getAttribute('data-gateway-config-toggle') || 'ativushub';

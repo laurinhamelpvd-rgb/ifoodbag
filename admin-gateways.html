@@ -142,6 +142,11 @@
               <strong id="metric-gateway-sunize-conv">0%</strong>
               <em id="metric-gateway-sunize-detail">0 pagos / 0 PIX</em>
             </div>
+            <div class="admin-kpi">
+              <span>Paradise</span>
+              <strong id="metric-gateway-paradise-conv">0%</strong>
+              <em id="metric-gateway-paradise-detail">0 pagos / 0 PIX</em>
+            </div>
           </div>
 
           <div class="admin-inline-actions">
@@ -164,6 +169,7 @@
                 <option value="ativushub">AtivusHUB</option>
                 <option value="ghostspay">GhostsPay</option>
                 <option value="sunize">Sunize</option>
+                <option value="paradise">Paradise</option>
               </select>
               <label for="payments-active-gateway" class="floating-label">Gateway ativo para gerar PIX</label>
             </div>
@@ -277,8 +283,52 @@
                 </div>
               </div>
             </article>
+            <article class="gateway-card" data-gateway-card="paradise">
+              <header class="gateway-card-header">
+                <div class="gateway-card-heading">
+                  <h3>Paradise</h3>
+                  <p>Gateway PIX Paradise com webhook nativo e tracking completo.</p>
+                </div>
+                <div class="gateway-card-actions">
+                  <label class="gateway-switch" for="gateway-paradise-enabled">
+                    <input type="checkbox" id="gateway-paradise-enabled" />
+                    <span class="gateway-switch-track" aria-hidden="true"></span>
+                    <span class="gateway-switch-text" id="gateway-paradise-state">Desligado</span>
+                  </label>
+                  <button type="button" class="btn-secondary gateway-config-toggle" data-gateway-config-toggle="paradise" aria-controls="gateway-config-paradise" aria-expanded="false">Configurar</button>
+                </div>
+              </header>
+              <div id="gateway-config-paradise" class="gateway-card-body">
+                <div class="admin-grid gateway-fields-grid">
+                  <div class="input-group">
+                    <input type="text" id="gateway-paradise-base-url" class="floating-input" placeholder=" " />
+                    <label for="gateway-paradise-base-url" class="floating-label">Paradise Base URL</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" id="gateway-paradise-api-key" class="floating-input" placeholder=" " autocomplete="new-password" />
+                    <label for="gateway-paradise-api-key" class="floating-label">Paradise X-API-Key</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" id="gateway-paradise-product-hash" class="floating-input" placeholder=" " autocomplete="new-password" />
+                    <label for="gateway-paradise-product-hash" class="floating-label">Paradise Product Hash (opcional)</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="text" id="gateway-paradise-orderbump-hash" class="floating-input" placeholder=" " />
+                    <label for="gateway-paradise-orderbump-hash" class="floating-label">Paradise Orderbump Hash (opcional)</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="text" id="gateway-paradise-source" class="floating-input" placeholder=" " />
+                    <label for="gateway-paradise-source" class="floating-label">Paradise Source (padrao: api_externa)</label>
+                  </div>
+                  <div class="input-group">
+                    <input type="text" id="gateway-paradise-description" class="floating-input" placeholder=" " />
+                    <label for="gateway-paradise-description" class="floating-label">Descricao padrao do pedido (opcional)</label>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
-          <p class="admin-hint">Webhook token: fixo em <code>dev</code> para AtivusHUB e GhostsPay. Sunize nao exige webhook token.</p>
+          <p class="admin-hint">Webhook token: fixo em <code>dev</code> para AtivusHUB e GhostsPay. Sunize e Paradise nao exigem webhook token.</p>
         </section>
       </div>
     </main>
