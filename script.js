@@ -274,6 +274,15 @@ function setupGlobalBackRedirect(page) {
     applyOfferToModal(activeOffer);
 
     const resolveTargetUrl = () => buildDistinctBackRedirectUrl(page);
+    const resolveCheckoutCouponUrl = (amountOff) => {
+        const params = new URLSearchParams(window.location.search || '');
+        params.set('dc', '1');
+        params.delete('forceFrete');
+        params.set('br', String(Date.now()));
+        params.set('coupon', String(Number(amountOff || 0) || 5));
+        const query = params.toString();
+        return `checkout.html${query ? `?${query}` : ''}`;
+    };
     window.__ifbResolveBackRedirect = () => buildDistinctBackRedirectUrl(page);
     const markBackAttempt = () => {
         if (backAttemptTracked) return;
@@ -529,7 +538,13 @@ function setupGlobalBackRedirect(page) {
             hideCouponModal();
             trackLead(activeOffer.acceptEvent, { stage: page, copiedPix, backOfferLevel: shownOfferLevel || 1 });
             if (activeOffer.mode === 'pix-copy') return;
-            if (activeOffer.mode === 'coupon') setStage('checkout');
+            if (activeOffer.mode === 'coupon') {
+                setStage('checkout');
+                if (page === 'checkout') {
+                    redirect(resolveCheckoutCouponUrl(activeOffer.amountOff));
+                    return;
+                }
+            }
             redirect(resolveTargetUrl());
         });
     }
@@ -2695,7 +2710,7 @@ function buildBackRedirectUrl(pageOverride) {
         case 'success':
             return directCheckoutUrl();
         case 'checkout':
-            if (shipping) return 'orderbump.html';
+            // Backredirect no checkout deve manter o lead no checkout (nao avancar para orderbump).
             return directCheckoutUrl();
         case 'orderbump':
             if (pixPending) return 'pix.html';
@@ -2752,7 +2767,6 @@ function buildBackRedirectFallbackUrl(pageOverride) {
         case 'checkout':
             return withParams('checkout.html', (qp) => {
                 qp.set('dc', '1');
-                qp.set('forceFrete', '1');
                 qp.set('br', String(Date.now()));
             });
         case 'orderbump':

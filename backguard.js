@@ -82,6 +82,7 @@
                 var pixPending = !!pix && !pixPaid;
                 var pathname = String(window.location.pathname || '').toLowerCase();
                 var onOrderbump = /\/orderbump(?:\.html)?$/i.test(pathname);
+                var onCheckout = /\/checkout(?:\.html)?$/i.test(pathname);
                 var onHome = pathname === '/' || /\/index(?:\.html)?$/i.test(pathname);
 
                 if (onHome && !hasPersonal && !address && !shipping && !pix) return '/quiz';
@@ -116,6 +117,9 @@
                 }
                 if (onOrderbump && !isShippingSelectionComplete(shipping)) {
                     return '/checkout?forceFrete=1';
+                }
+                if (onCheckout && isShippingSelectionComplete(shipping)) {
+                    return '/checkout?dc=1&ebr=' + String(Date.now());
                 }
                 if (shipping) return '/orderbump';
             } catch (_error2) {
