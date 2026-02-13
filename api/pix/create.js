@@ -784,6 +784,36 @@ module.exports = async (req, res) => {
             upsellEnabled
         });
         if (reusable) {
+            // Reused PIX should still ensure UTMify has the pending order snapshot.
+            const reusableTxid = String(reusable.idTransaction || '').trim();
+            const reusableUtmJob = {
+                channel: 'utmfy',
+                eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
+                dedupeKey: reusableTxid ? `utmfy:pix_created:${gateway}:${upsellEnabled ? 'upsell' : 'base'}:${reusableTxid}` : null,
+                payload: {
+                    orderId: orderId,
+                    amount: Number(reusable.amount || totalAmount || 0),
+                    sessionId: rawBody.sessionId || '',
+                    personal,
+                    shipping: normalizedShipping,
+                    bump: normalizedBump.selected ? normalizedBump : null,
+                    utm: rawBody.utm || {},
+                    txid: reusableTxid,
+                    gateway,
+                    createdAt: new Date().toISOString(),
+                    status: 'waiting_payment',
+                    upsell: upsellEnabled ? {
+                        enabled: true,
+                        kind: String(upsell?.kind || 'frete_1dia'),
+                        title: String(upsell?.title || 'Prioridade de envio'),
+                        price: Number(upsell?.price || totalAmount || 0)
+                    } : null
+                }
+            };
+            const queued = await enqueueDispatch(reusableUtmJob).catch(() => null);
+            if (queued?.ok || queued?.fallback) {
+                processDispatchQueue(6).catch(() => null);
+            }
             return res.status(200).json(reusable);
         }
 
