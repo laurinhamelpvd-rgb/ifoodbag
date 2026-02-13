@@ -1174,6 +1174,78 @@ module.exports = async (req, res) => {
             }, req).catch(() => null);
 
             const utmOrderId = orderId;
+            const utmJob = {
+                channel: 'utmfy',
+                eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
+                dedupeKey: txid ? `utmfy:pix_created:${gateway}:${upsellEnabled ? 'upsell' : 'base'}:${txid}` : null,
+                payload: {
+                    orderId: utmOrderId,
+                    amount: totalAmount,
+                    sessionId: rawBody.sessionId || '',
+                    personal,
+                    shipping: normalizedShipping,
+                    bump: normalizedBump.selected ? normalizedBump : null,
+                    utm: rawBody.utm || {},
+                    txid,
+                    gateway,
+                    createdAt: pixCreatedAt,
+                    status: 'waiting_payment',
+                    upsell: upsellEnabled ? {
+                        enabled: true,
+                        kind: String(upsell?.kind || 'frete_1dia'),
+                        title: String(upsell?.title || 'Prioridade de envio'),
+                        price: Number(upsell?.price || totalAmount)
+                    } : null
+                }
+            };
+            const pushPayload = {
+                txid,
+                orderId: utmOrderId,
+                amount: totalAmount,
+                customerName: name,
+                customerEmail: email,
+                shippingName: normalizedShipping?.name || '',
+                cep: zipCode,
+                gateway,
+                isUpsell: upsellEnabled
+            };
+            const pushKind = upsellEnabled ? 'upsell_pix_created' : 'pix_created';
+            const pushJob = {
+                channel: 'pushcut',
+                kind: pushKind,
+                dedupeKey: txid ? `pushcut:pix_created:${gateway}:${txid}` : null,
+                payload: pushPayload
+            };
+            const pixelJob = {
+                channel: 'pixel',
+                eventName: 'AddPaymentInfo',
+                dedupeKey: txid ? `pixel:add_payment_info:${txid}` : null,
+                payload: {
+                    amount: totalAmount,
+                    orderId: utmOrderId,
+                    shippingName: normalizedShipping?.name || '',
+                    gateway,
+                    isUpsell: upsellEnabled,
+                    client_email: email,
+                    client_document: cpf,
+                    source_url: sourceUrl,
+                    fbclid,
+                    fbp,
+                    fbc
+                }
+            };
+
+            const [utmQueued, pushQueued, pixelQueued] = await Promise.all([
+                enqueueDispatch(utmJob).catch(() => null),
+                enqueueDispatch(pushJob).catch(() => null),
+                enqueueDispatch(pixelJob).catch(() => null)
+            ]);
+            const shouldProcessQueue = Boolean(
+                utmQueued?.ok || utmQueued?.fallback ||
+                pushQueued?.ok || pushQueued?.fallback ||
+                pixelQueued?.ok || pixelQueued?.fallback
+            );
+
             const responsePayload = {
                 idTransaction: txid,
                 paymentCode,
@@ -1187,87 +1259,8 @@ module.exports = async (req, res) => {
             createInflightResult = responsePayload;
             res.status(200).json(responsePayload);
 
-            // Side effects run asynchronously to keep PIX generation fast for the buyer.
+            // Jobs are enqueued before response; queue processing runs asynchronously.
             (async () => {
-                const utmJob = {
-                    channel: 'utmfy',
-                    eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
-                    dedupeKey: txid ? `utmfy:pix_created:${gateway}:${upsellEnabled ? 'upsell' : 'base'}:${txid}` : null,
-                    payload: {
-                        orderId: utmOrderId,
-                        amount: totalAmount,
-                        sessionId: rawBody.sessionId || '',
-                        personal,
-                        shipping: normalizedShipping,
-                        bump: normalizedBump.selected ? normalizedBump : null,
-                        utm: rawBody.utm || {},
-                        txid,
-                        gateway,
-                        createdAt: pixCreatedAt,
-                        status: 'waiting_payment',
-                        upsell: upsellEnabled ? {
-                            enabled: true,
-                            kind: String(upsell?.kind || 'frete_1dia'),
-                            title: String(upsell?.title || 'Prioridade de envio'),
-                            price: Number(upsell?.price || totalAmount)
-                        } : null
-                    }
-                };
-
-                const pushPayload = {
-                    txid,
-                    orderId: utmOrderId,
-                    amount: totalAmount,
-                    customerName: name,
-                    customerEmail: email,
-                    shippingName: normalizedShipping?.name || '',
-                    cep: zipCode,
-                    gateway,
-                    isUpsell: upsellEnabled
-                };
-                const pushKind = upsellEnabled ? 'upsell_pix_created' : 'pix_created';
-                const pushJob = {
-                    channel: 'pushcut',
-                    kind: pushKind,
-                    dedupeKey: txid ? `pushcut:pix_created:${gateway}:${txid}` : null,
-                    payload: pushPayload
-                };
-                const pixelJob = {
-                    channel: 'pixel',
-                    eventName: 'AddPaymentInfo',
-                    dedupeKey: txid ? `pixel:add_payment_info:${txid}` : null,
-                    payload: {
-                        amount: totalAmount,
-                        orderId: utmOrderId,
-                        shippingName: normalizedShipping?.name || '',
-                        gateway,
-                        isUpsell: upsellEnabled,
-                        client_email: email,
-                        client_document: cpf,
-                        source_url: sourceUrl,
-                        fbclid,
-                        fbp,
-                        fbc
-                    }
-                };
-
-                let shouldProcessQueue = false;
-
-                const utmQueued = await enqueueDispatch(utmJob).catch(() => null);
-                if (utmQueued?.ok || utmQueued?.fallback) {
-                    shouldProcessQueue = true;
-                }
-
-                const pushQueued = await enqueueDispatch(pushJob).catch(() => null);
-                if (pushQueued?.ok || pushQueued?.fallback) {
-                    shouldProcessQueue = true;
-                }
-
-                const pixelQueued = await enqueueDispatch(pixelJob).catch(() => null);
-                if (pixelQueued?.ok || pixelQueued?.fallback) {
-                    shouldProcessQueue = true;
-                }
-
                 if (shouldProcessQueue) {
                     await processDispatchQueue(12).catch(() => null);
                 }

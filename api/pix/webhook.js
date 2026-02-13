@@ -819,24 +819,11 @@ module.exports = async (req, res) => {
                 : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
     const dedupeBase = orderId || effectiveTxid || 'unknown';
     const isTerminalUpdate = Boolean(isPaid || isRefunded || isRefused);
-    const previousLifecycleEvent = new Set([
-        'pix_created',
-        'pix_pending',
-        'pix_confirmed',
-        'pix_refunded',
-        'pix_refused',
-        'upsell_pix_created',
-        'upsell_pix_confirmed'
-    ]).has(previousLastEvent);
-    const shouldSendPendingFallback = !isTerminalUpdate && !previousLifecycleEvent;
     const shouldSendUtmStatus =
         Boolean(orderId || effectiveTxid) &&
         previousLastEvent !== lastEvent &&
-        (isTerminalUpdate || shouldSendPendingFallback);
+        isTerminalUpdate;
     const shouldTriggerPaidSideEffects = Boolean(isPaid && effectiveTxid) && previousLastEvent !== 'pix_confirmed';
-    const shouldSendCreatedPushFallback =
-        Boolean(orderId || effectiveTxid) &&
-        shouldSendPendingFallback;
     let shouldProcessQueue = false;
 
     if (shouldSendUtmStatus) {
@@ -907,44 +894,6 @@ module.exports = async (req, res) => {
             payload: utmPayload
         };
         const queued = await enqueueDispatch(utmJob).catch(() => null);
-        if (queued?.ok || queued?.fallback) {
-            shouldProcessQueue = true;
-        }
-    }
-
-    if (shouldSendCreatedPushFallback) {
-        const orderIdForPush = String(
-            leadData?.session_id ||
-            sessionOrderId ||
-            body?.external_id ||
-            body?.externalId ||
-            body?.tracking?.orderId ||
-            body?.metadata?.orderId ||
-            body?.orderId ||
-            ''
-        ).trim();
-        const pushPayload = {
-            txid: effectiveTxid,
-            orderId: effectiveTxid || orderIdForPush,
-            status: statusRaw || 'pending',
-            amount: eventAmount,
-            gateway,
-            customerName: leadData?.name || evt.fallbackPersonal?.name || '',
-            customerEmail: leadData?.email || evt.fallbackPersonal?.email || '',
-            cep: leadData?.cep || '',
-            shippingName: leadData?.shipping_name || '',
-            isUpsell: upsellEvent
-        };
-        const pushKind = upsellEvent ? 'upsell_pix_created' : 'pix_created';
-        const pushCreatedDedupeKey = effectiveTxid
-            ? `pushcut:pix_created:${gateway}:${effectiveTxid}`
-            : `pushcut:pix_created_fallback:${gateway}:${dedupeBase}`;
-        const queued = await enqueueDispatch({
-            channel: 'pushcut',
-            kind: pushKind,
-            dedupeKey: pushCreatedDedupeKey,
-            payload: pushPayload
-        }).catch(() => null);
         if (queued?.ok || queued?.fallback) {
             shouldProcessQueue = true;
         }
