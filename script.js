@@ -949,15 +949,45 @@ function initCep() {
     const addressResult = document.getElementById('address-result');
     const addrStreet = document.getElementById('addr-street');
     const addrCity = document.getElementById('addr-city');
+    const addressExtra = document.getElementById('address-extra');
+    const addrNumber = document.getElementById('addr-number');
+    const addrComplement = document.getElementById('addr-complement');
+    const addrReference = document.getElementById('addr-reference');
     const freightBox = document.getElementById('freight-calculation');
     const btnConfirm = document.getElementById('btn-confirm-address');
+
+    const collectCepAddressExtra = () => ({
+        number: (addrNumber?.value || '').trim(),
+        complement: (addrComplement?.value || '').trim(),
+        reference: (addrReference?.value || '').trim(),
+        noNumber: false,
+        noComplement: false
+    });
+
+    const applyCepAddressExtra = (extra) => {
+        if (addrNumber) addrNumber.value = extra?.noNumber ? '' : (extra?.number || '');
+        if (addrComplement) addrComplement.value = extra?.noComplement ? '' : (extra?.complement || '');
+        if (addrReference) addrReference.value = extra?.reference || '';
+    };
+
+    const formatStreetPreview = (streetLine) => {
+        const baseStreet = String(streetLine || '').trim() || 'Rua nao informada';
+        const number = (addrNumber?.value || '').trim();
+        return number ? `${baseStreet}, ${number}` : baseStreet;
+    };
+
+    const updateAddressPreview = (streetLine, cityLine) => {
+        if (addrStreet) addrStreet.innerText = formatStreetPreview(streetLine);
+        if (addrCity) addrCity.innerText = cityLine || 'Cidade nao informada';
+    };
 
     const savedAddress = loadAddress();
     if (savedAddress && cepInput) {
         cepInput.value = savedAddress.cep || '';
-        if (addrStreet) addrStreet.innerText = savedAddress.streetLine || '';
-        if (addrCity) addrCity.innerText = savedAddress.cityLine || '';
+        applyCepAddressExtra(loadAddressExtra() || {});
+        updateAddressPreview(savedAddress.streetLine, savedAddress.cityLine);
         setHidden(addressResult, false);
+        setHidden(addressExtra, false);
         setHidden(freightBox, false);
         btnBuscar?.classList.add('hidden');
     }
@@ -965,6 +995,15 @@ function initCep() {
     cepInput?.addEventListener('input', () => {
         maskCep(cepInput);
         resetCepResults(errorBox, addressResult, freightBox, btnBuscar, loadingRow);
+        setHidden(addressExtra, true);
+    });
+
+    [addrNumber, addrComplement, addrReference].forEach((input) => {
+        input?.addEventListener('input', () => {
+            saveAddressExtra(collectCepAddressExtra());
+            const currentAddress = loadAddress();
+            updateAddressPreview(currentAddress?.streetLine, currentAddress?.cityLine);
+        });
     });
 
     const fetchCepData = async (rawCep, retry = 1) => {
@@ -1009,8 +1048,7 @@ function initCep() {
             const stateUf = (data.state || '').trim();
             const cityLine = stateUf ? `${city} - ${stateUf}` : city;
 
-            if (addrStreet) addrStreet.innerText = streetLine;
-            if (addrCity) addrCity.innerText = cityLine;
+            updateAddressPreview(streetLine, cityLine);
 
             saveAddress({
                 streetLine,
@@ -1032,6 +1070,7 @@ function initCep() {
             setTimeout(() => {
                 setHidden(loadingRow, true);
                 setHidden(addressResult, false);
+                setHidden(addressExtra, false);
                 setHidden(freightBox, false);
                 btnBuscar.classList.add('hidden');
                 btnBuscar.innerText = 'Verificar disponibilidade';
@@ -1055,6 +1094,17 @@ function initCep() {
             showInlineError(errorBox, 'Confirme o CEP para continuar.');
             return;
         }
+        const extra = collectCepAddressExtra();
+        if (!extra.number) {
+            showInlineError(errorBox, 'Informe o numero do endereco para continuar.');
+            addrNumber?.focus();
+            return;
+        }
+        saveAddressExtra(extra);
+        trackLead('address_extra_confirmed', {
+            stage: 'cep',
+            extra
+        });
         if (returnTo === 'checkout') {
             sessionStorage.removeItem(STORAGE_KEYS.returnTo);
             setStage('checkout');
@@ -1383,21 +1433,12 @@ function initCheckout() {
     const btnEditData = document.querySelector('.action-stack a[href^="dados"]');
     const btnEditAddress = document.querySelector('.action-stack a[href^="endereco"]');
     const freightCard = document.querySelector('.freight-card');
-    const checkoutStepCep = document.getElementById('checkout-step-cep');
-    const checkoutStepFrete = document.getElementById('checkout-step-frete');
-    const checkoutStepFinal = document.getElementById('checkout-step-final');
     const checkoutNextStep = document.getElementById('checkout-next-step');
     const checkoutSelectedShipping = document.getElementById('checkout-selected-shipping');
     if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
 
     let orderBumpHintEnabled = true;
     let checkoutSubmitting = false;
-
-    const setCheckoutFlowStep = (step) => {
-        checkoutStepCep?.classList.toggle('is-active', step === 'cep');
-        checkoutStepFrete?.classList.toggle('is-active', step === 'frete');
-        checkoutStepFinal?.classList.toggle('is-active', step === 'final');
-    };
 
     const formatShippingLabel = (option) => {
         if (!option) return 'Frete ainda nao selecionado.';
@@ -1422,7 +1463,6 @@ function initCheckout() {
         } else if (hasValidCep) {
             flowStep = 'frete';
         }
-        setCheckoutFlowStep(flowStep);
 
         if (flowStep === 'cep') {
             if (checkoutNextStep) checkoutNextStep.textContent = 'Informe seu CEP para liberar as opcoes de frete.';
