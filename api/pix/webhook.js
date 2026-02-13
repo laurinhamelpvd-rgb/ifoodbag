@@ -775,6 +775,7 @@ module.exports = async (req, res) => {
         leadPayload?.pix?.idtransaction ||
         ''
     ).trim();
+    const effectiveTxid = String(txid || leadTxid || '').trim();
     const leadMatchesTxid = !txid || (leadTxid && leadTxid === txid);
     const normalizedEventAmount = normalizeMoneyToBrl(amount);
     const amountFromLead = leadMatchesTxid
@@ -804,7 +805,7 @@ module.exports = async (req, res) => {
             body?.tracking?.orderId ||
             body?.metadata?.orderId ||
             body?.orderId ||
-            txid ||
+            effectiveTxid ||
             ''
         ).trim();
 
@@ -816,7 +817,7 @@ module.exports = async (req, res) => {
             : isRefused
                 ? 'pix_failed'
                 : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
-    const dedupeBase = orderId || txid || 'unknown';
+    const dedupeBase = orderId || effectiveTxid || 'unknown';
     const isTerminalUpdate = Boolean(isPaid || isRefunded || isRefused);
     const previousLifecycleEvent = new Set([
         'pix_created',
@@ -829,20 +830,20 @@ module.exports = async (req, res) => {
     ]).has(previousLastEvent);
     const shouldSendPendingFallback = !isTerminalUpdate && !previousLifecycleEvent;
     const shouldSendUtmStatus =
-        Boolean(orderId || txid) &&
+        Boolean(orderId || effectiveTxid) &&
         previousLastEvent !== lastEvent &&
         (isTerminalUpdate || shouldSendPendingFallback);
-    const shouldTriggerPaidSideEffects = Boolean(isPaid && txid) && previousLastEvent !== 'pix_confirmed';
+    const shouldTriggerPaidSideEffects = Boolean(isPaid && effectiveTxid) && previousLastEvent !== 'pix_confirmed';
     const shouldSendCreatedPushFallback =
-        Boolean(orderId || txid) &&
+        Boolean(orderId || effectiveTxid) &&
         shouldSendPendingFallback;
     let shouldProcessQueue = false;
 
     if (shouldSendUtmStatus) {
         const utmPayload = {
             event: 'pix_status',
-            orderId: orderId || txid,
-            txid,
+            orderId: orderId || effectiveTxid,
+            txid: effectiveTxid,
             gateway,
             status: utmifyStatus,
             amount: eventAmount,
@@ -923,8 +924,8 @@ module.exports = async (req, res) => {
             ''
         ).trim();
         const pushPayload = {
-            txid,
-            orderId: txid || orderIdForPush,
+            txid: effectiveTxid,
+            orderId: effectiveTxid || orderIdForPush,
             status: statusRaw || 'pending',
             amount: eventAmount,
             gateway,
@@ -935,8 +936,8 @@ module.exports = async (req, res) => {
             isUpsell: upsellEvent
         };
         const pushKind = upsellEvent ? 'upsell_pix_created' : 'pix_created';
-        const pushCreatedDedupeKey = txid
-            ? `pushcut:pix_created:${gateway}:${txid}`
+        const pushCreatedDedupeKey = effectiveTxid
+            ? `pushcut:pix_created:${gateway}:${effectiveTxid}`
             : `pushcut:pix_created_fallback:${gateway}:${dedupeBase}`;
         const queued = await enqueueDispatch({
             channel: 'pushcut',
@@ -961,8 +962,8 @@ module.exports = async (req, res) => {
             ''
         ).trim();
         const pushPayload = {
-            txid,
-            orderId: txid || orderIdForPush,
+            txid: effectiveTxid,
+            orderId: effectiveTxid || orderIdForPush,
             status: statusRaw || 'confirmed',
             amount: eventAmount,
             gateway,
@@ -976,7 +977,7 @@ module.exports = async (req, res) => {
         const pushQueued = await enqueueDispatch({
             channel: 'pushcut',
             kind: pushKind,
-            dedupeKey: `pushcut:pix_confirmed:${gateway}:${txid}`,
+            dedupeKey: `pushcut:pix_confirmed:${gateway}:${effectiveTxid}`,
             payload: pushPayload
         }).catch(() => null);
         if (pushQueued?.ok || pushQueued?.fallback) {
@@ -989,10 +990,10 @@ module.exports = async (req, res) => {
         const pixelQueued = await enqueueDispatch({
             channel: 'pixel',
             eventName: 'Purchase',
-            dedupeKey: `pixel:purchase:${gateway}:${txid}`,
+            dedupeKey: `pixel:purchase:${gateway}:${effectiveTxid}`,
             payload: {
                 amount: eventAmount,
-                orderId: txid || orderIdForPush,
+                orderId: effectiveTxid || orderIdForPush,
                 gateway,
                 shippingName: leadData?.shipping_name || '',
                 isUpsell: upsellEvent,
