@@ -81,16 +81,24 @@
 
             <div id="address-extra" class="address-extra-card hidden" aria-hidden="true">
                 <div class="input-group">
-                    <input type="text" id="addr-number" class="floating-input" placeholder=" " autocomplete="address-line2" inputmode="numeric">
-                    <label for="addr-number" class="floating-label">Numero *</label>
+                    <input type="text" id="addr-number" class="address-extra-input" placeholder="Numero *"
+                        autocomplete="address-line2" inputmode="numeric">
                 </div>
+                <label class="address-extra-checkline" for="no-number">
+                    <input type="checkbox" id="no-number">
+                    <span>Endereco sem numero</span>
+                </label>
                 <div class="input-group">
-                    <input type="text" id="addr-complement" class="floating-input" placeholder=" " autocomplete="address-line2">
-                    <label for="addr-complement" class="floating-label">Complemento</label>
+                    <input type="text" id="addr-complement" class="address-extra-input" placeholder="Complemento *"
+                        autocomplete="address-line2">
                 </div>
+                <label class="address-extra-checkline" for="no-complement">
+                    <input type="checkbox" id="no-complement">
+                    <span>Endereco sem complemento</span>
+                </label>
                 <div class="input-group">
-                    <input type="text" id="addr-reference" class="floating-input" placeholder=" " autocomplete="off">
-                    <label for="addr-reference" class="floating-label">Ponto de referencia (opcional)</label>
+                    <input type="text" id="addr-reference" class="address-extra-input"
+                        placeholder="Ponto de referencia (opcional)" autocomplete="off">
                 </div>
             </div>
 

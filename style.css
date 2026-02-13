@@ -1315,23 +1315,92 @@ body[data-page='upsell'] .action-stack {
 
 .address-extra-card {
     width: 100%;
-    background: #fff;
-    border: 1px solid #e8e8e8;
-    border-radius: var(--radius-md);
-    padding: 14px;
-    margin-top: -12px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin-top: -10px;
     margin-bottom: 16px;
     text-align: left;
-    box-shadow: var(--shadow-soft);
+    box-shadow: none;
     animation: fadeIn 0.4s ease;
 }
 
 .address-extra-card .input-group {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .address-extra-card .input-group:last-child {
     margin-bottom: 0;
+}
+
+.address-extra-input {
+    width: 100%;
+    height: 52px;
+    border: 1px solid #d7d7d7;
+    border-radius: 10px;
+    background: #fff;
+    color: #3f3f3f;
+    font-size: 1.02rem;
+    padding: 0 14px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    -webkit-appearance: none;
+}
+
+.address-extra-input::placeholder {
+    color: #7e7e7e;
+}
+
+.address-extra-input:focus {
+    border-color: #bdbdbd;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.03);
+}
+
+.address-extra-input:disabled {
+    background: #f3f3f3;
+    border-color: #e0e0e0;
+}
+
+.address-extra-checkline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 16px;
+    font-size: 0.93rem;
+    color: #666;
+    user-select: none;
+    cursor: pointer;
+}
+
+.address-extra-checkline input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #cfcfcf;
+    border-radius: 5px;
+    background: #fff;
+    position: relative;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.address-extra-checkline input[type="checkbox"]:checked {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.address-extra-checkline input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 1px;
+    width: 5px;
+    height: 11px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
 }
 
 .address-icon {

@@ -254,6 +254,23 @@ function setupGlobalBackRedirect(page) {
     const couponMessage = modalEls.couponMessage;
     const couponBadge = modalEls.couponBadge;
     const couponSubtitle = modalEls.couponSubtitle;
+    const backOfferLevelKey = `ifoodbag.backOfferLevel.${page}`;
+    const getStoredOfferLevel = () => {
+        try {
+            return Math.max(0, Number(sessionStorage.getItem(backOfferLevelKey) || 0));
+        } catch (_error) {
+            return 0;
+        }
+    };
+    const saveStoredOfferLevel = (level) => {
+        try {
+            const safeLevel = Math.max(0, Number(level || 0));
+            sessionStorage.setItem(backOfferLevelKey, String(safeLevel));
+        } catch (_error) {
+            // Ignore restricted sessionStorage environments.
+        }
+    };
+    shownOfferLevel = Math.max(shownOfferLevel, getStoredOfferLevel());
     const applyOfferToModal = (offerConfig) => {
         if (couponBadge) {
             couponBadge.textContent = offerConfig.badge;
@@ -299,6 +316,7 @@ function setupGlobalBackRedirect(page) {
         modal.classList.remove('coupon-anim-in');
         void modal.offsetWidth;
         modal.classList.add('coupon-anim-in');
+        saveStoredOfferLevel(shownOfferLevel || 1);
         trackLead(activeOffer.shownEvent, { stage: page, backOfferLevel: shownOfferLevel || 1 });
     };
 
@@ -333,7 +351,7 @@ function setupGlobalBackRedirect(page) {
         const isGuardState = backState?.ifb === true && backState?.token === guardToken;
         if (event?.type === 'popstate' && !isGuardState) {
             ensureGuardEntry(true);
-            return;
+            if (page !== 'checkout') return;
         }
         const now = Date.now();
         if ((now - backAttemptAt) < 40) return;
@@ -477,13 +495,15 @@ function setupGlobalBackRedirect(page) {
                 const amountOff = Number(activeOffer.amountOff || 5);
                 const safeAmountOff = Number.isFinite(amountOff) && amountOff > 0 ? amountOff : 5;
                 const couponCode = String(activeOffer.couponCode || (safeAmountOff >= 10 ? 'FRETE10' : 'FRETE5')).trim();
+                const acceptedLevel = safeAmountOff >= 10 ? 2 : 1;
                 saveCoupon({
                     code: couponCode || 'FRETE5',
                     amountOff: safeAmountOff,
                     appliedAt: Date.now(),
                     source: 'backredirect',
-                    backOfferLevel: shownOfferLevel || 1
+                    backOfferLevel: acceptedLevel
                 });
+                saveStoredOfferLevel(acceptedLevel);
                 sessionStorage.setItem(STORAGE_KEYS.directCheckout, '1');
 
                 if (page === 'pix') {
@@ -967,28 +987,53 @@ function initCep() {
     const addressExtra = document.getElementById('address-extra');
     const addrNumber = document.getElementById('addr-number');
     const addrComplement = document.getElementById('addr-complement');
+    const noNumber = document.getElementById('no-number');
+    const noComplement = document.getElementById('no-complement');
     const addrReference = document.getElementById('addr-reference');
     const freightBox = document.getElementById('freight-calculation');
     const btnConfirm = document.getElementById('btn-confirm-address');
 
     const collectCepAddressExtra = () => ({
-        number: (addrNumber?.value || '').trim(),
-        complement: (addrComplement?.value || '').trim(),
+        number: noNumber?.checked ? '' : (addrNumber?.value || '').trim(),
+        complement: noComplement?.checked ? '' : (addrComplement?.value || '').trim(),
         reference: (addrReference?.value || '').trim(),
-        noNumber: false,
-        noComplement: false
+        noNumber: !!noNumber?.checked,
+        noComplement: !!noComplement?.checked
     });
 
+    const setInputState = (input, disabled) => {
+        if (!input) return;
+        input.disabled = disabled;
+        input.classList.toggle('input-dim', disabled);
+    };
+
+    const syncNoNumberState = () => {
+        const checked = !!noNumber?.checked;
+        if (checked && addrNumber) addrNumber.value = '';
+        setInputState(addrNumber, checked);
+    };
+
+    const syncNoComplementState = () => {
+        const checked = !!noComplement?.checked;
+        if (checked && addrComplement) addrComplement.value = '';
+        setInputState(addrComplement, checked);
+    };
+
     const applyCepAddressExtra = (extra) => {
+        if (noNumber) noNumber.checked = !!extra?.noNumber;
+        if (noComplement) noComplement.checked = !!extra?.noComplement;
         if (addrNumber) addrNumber.value = extra?.noNumber ? '' : (extra?.number || '');
         if (addrComplement) addrComplement.value = extra?.noComplement ? '' : (extra?.complement || '');
         if (addrReference) addrReference.value = extra?.reference || '';
+        setInputState(addrNumber, !!extra?.noNumber);
+        setInputState(addrComplement, !!extra?.noComplement);
     };
 
     const formatStreetPreview = (streetLine) => {
         const baseStreet = String(streetLine || '').trim() || 'Rua nao informada';
         const number = (addrNumber?.value || '').trim();
-        return number ? `${baseStreet}, ${number}` : baseStreet;
+        const numberLabel = noNumber?.checked ? 's/n' : number;
+        return numberLabel ? `${baseStreet}, ${numberLabel}` : baseStreet;
     };
 
     const updateAddressPreview = (streetLine, cityLine) => {
@@ -1013,12 +1058,27 @@ function initCep() {
         setHidden(addressExtra, true);
     });
 
+    const persistCepAddressExtra = () => {
+        clearInlineError(errorBox);
+        saveAddressExtra(collectCepAddressExtra());
+        const currentAddress = loadAddress();
+        updateAddressPreview(currentAddress?.streetLine, currentAddress?.cityLine);
+    };
+
     [addrNumber, addrComplement, addrReference].forEach((input) => {
         input?.addEventListener('input', () => {
-            saveAddressExtra(collectCepAddressExtra());
-            const currentAddress = loadAddress();
-            updateAddressPreview(currentAddress?.streetLine, currentAddress?.cityLine);
+            persistCepAddressExtra();
         });
+    });
+
+    noNumber?.addEventListener('change', () => {
+        syncNoNumberState();
+        persistCepAddressExtra();
+    });
+
+    noComplement?.addEventListener('change', () => {
+        syncNoComplementState();
+        persistCepAddressExtra();
     });
 
     const fetchCepData = async (rawCep, retry = 1) => {
@@ -1110,9 +1170,14 @@ function initCep() {
             return;
         }
         const extra = collectCepAddressExtra();
-        if (!extra.number) {
+        if (!extra.noNumber && !extra.number) {
             showInlineError(errorBox, 'Informe o numero do endereco para continuar.');
             addrNumber?.focus();
+            return;
+        }
+        if (!extra.noComplement && !extra.complement) {
+            showInlineError(errorBox, 'Informe o complemento do endereco para continuar.');
+            addrComplement?.focus();
             return;
         }
         saveAddressExtra(extra);
