@@ -82,6 +82,9 @@
                 var pixPending = !!pix && !pixPaid;
                 var pathname = String(window.location.pathname || '').toLowerCase();
                 var onOrderbump = /\/orderbump(?:\.html)?$/i.test(pathname);
+                var onHome = pathname === '/' || /\/index(?:\.html)?$/i.test(pathname);
+
+                if (onHome && !hasPersonal && !address && !shipping && !pix) return '/quiz';
 
                 if (!vslCompleted && hasPersonal && address) return '/processando';
                 if (pixPending) return '/pix';

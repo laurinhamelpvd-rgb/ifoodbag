@@ -2563,8 +2563,15 @@ function buildBackRedirectUrl(pageOverride) {
         personal?.phone
     );
     const hasAddress = !!address;
+    const hasShipping = !!shipping;
+    const hasPix = !!pix;
+    const hasAnyFunnelProgress = hasPersonalCore || hasAddress || hasShipping || hasPix;
     const canOpenVsl = hasPersonalCore && hasAddress;
     const mustShowVslFirst = !isVslCompleted();
+
+    if (page === 'home' && !hasAnyFunnelProgress) {
+        return 'quiz.html';
+    }
 
     if (mustShowVslFirst) {
         return canOpenVsl ? 'processando.html' : directProcessingUrl();
