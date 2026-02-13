@@ -213,6 +213,7 @@ function setupGlobalBackRedirect(page) {
     let backAttemptTracked = false;
     let backAttemptAt = 0;
     let orderbumpBackInFlight = false;
+    let checkoutBackPixInFlight = false;
     const guardDepth = 12;
     const guardToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const stateBase = { ifb: true, token: guardToken };
@@ -411,6 +412,59 @@ function setupGlobalBackRedirect(page) {
                     showToast(error?.message || 'Erro ao gerar o PIX.', 'error');
                 });
             return;
+        }
+
+        if (page === 'checkout') {
+            const currentCoupon = loadCoupon();
+            const currentAmountOff = Number(currentCoupon?.amountOff || 0) || roundMoney(25.9 * Number(currentCoupon?.discount || 0));
+            const hasFinalBackCoupon = (
+                currentAmountOff >= 10 ||
+                Number(currentCoupon?.backOfferLevel || 0) >= 2 ||
+                String(currentCoupon?.code || '').trim().toUpperCase() === 'FRETE10' ||
+                shownOfferLevel >= 2
+            );
+            if (hasFinalBackCoupon) {
+                if (checkoutBackPixInFlight) return;
+                checkoutBackPixInFlight = true;
+
+                const baseEconomico = 19.9;
+                const finalAmountOff = currentAmountOff > 0 ? currentAmountOff : 10;
+                const finalPrice = Math.max(0, roundMoney(baseEconomico - finalAmountOff));
+                const checkoutBackShipping = {
+                    id: 'economico',
+                    name: 'Envio Economico iFood',
+                    eta: '5 a 8 dias uteis',
+                    price: finalPrice,
+                    basePrice: baseEconomico,
+                    originalPrice: baseEconomico,
+                    selectedAt: Date.now(),
+                    selectedByUser: false,
+                    sessionId: getLeadSessionId(),
+                    source: 'checkout_back_coupon10_auto'
+                };
+
+                saveShipping(checkoutBackShipping);
+                saveBump({
+                    selected: false,
+                    price: 0,
+                    title: 'Seguro Bag'
+                });
+                trackLead('checkout_back_coupon10_direct_pix', {
+                    stage: 'checkout',
+                    shipping: checkoutBackShipping,
+                    couponAmountOff: finalAmountOff,
+                    amount: finalPrice
+                });
+                showToast('Gerando PIX promocional de R$ 9,90...', 'success');
+
+                createPixCharge(checkoutBackShipping, 0, {
+                    sourceStage: 'checkout_back_coupon10_direct_pix'
+                }).catch((error) => {
+                    checkoutBackPixInFlight = false;
+                    showToast(error?.message || 'Erro ao gerar o PIX.', 'error');
+                });
+                return;
+            }
         }
 
         if (shownOfferLevel >= 1 && (!canEscalateOffer || shownOfferLevel >= 2)) {
