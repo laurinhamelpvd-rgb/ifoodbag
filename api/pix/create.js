@@ -380,6 +380,38 @@ function normalizeStatus(value = '') {
         .replace(/-+/g, '_');
 }
 
+function pickAtivusCreateError(data = {}) {
+    const code = pickText(
+        data?.errCode,
+        data?.errcode,
+        data?.errorCode,
+        data?.error_code,
+        data?.code
+    );
+    const message = pickText(
+        data?.message,
+        data?.msg,
+        data?.error,
+        data?.detail,
+        data?.descricao,
+        data?.description
+    );
+    return {
+        code: String(code || '').trim(),
+        message: String(message || '').trim()
+    };
+}
+
+function mapAtivusErrorCodeToHttpStatus(code = '', fallbackStatus = 502) {
+    const clean = String(code || '').trim();
+    if (!clean) return Number(fallbackStatus || 502);
+    if (clean === '401') return 422;
+    if (clean === '403') return 403;
+    if (clean === '404') return 404;
+    if (clean === '422') return 422;
+    return Number(fallbackStatus || 502);
+}
+
 function isTerminalPixStatus(value = '') {
     const status = normalizeStatus(value);
     if (!status) return false;
@@ -1081,6 +1113,15 @@ module.exports = async (req, res) => {
                 paymentCode = String(data?.paymentCode || data?.paymentcode || '').trim();
                 paymentCodeBase64 = String(data?.paymentCodeBase64 || data?.paymentcodebase64 || '').trim();
                 statusRaw = String(data?.status_transaction || data?.status || '').trim();
+
+                const ativusError = pickAtivusCreateError(data);
+                if (!txid && (ativusError.code || ativusError.message)) {
+                    createInflightError = new Error(`ativushub_create_business_error:${ativusError.code || 'unknown'}`);
+                    return res.status(mapAtivusErrorCodeToHttpStatus(ativusError.code, response?.status || 502)).json({
+                        error: ativusError.message || 'Falha ao gerar o PIX.',
+                        detail: data
+                    });
+                }
             }
 
             if (!txid) {
