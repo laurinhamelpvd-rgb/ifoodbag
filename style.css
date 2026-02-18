@@ -1331,13 +1331,6 @@ body[data-page='upsell-correios'] .step {
     background: rgba(255, 255, 255, 0.84);
 }
 
-.correios-note {
-    margin: 0;
-    color: #4c6582;
-    font-size: 0.83rem;
-    line-height: 1.3;
-}
-
 .correios-banner {
     margin-top: 10px;
     background: #ffcd00;
@@ -4190,7 +4183,4 @@ body.modal-open {
         font-size: 0.83rem;
     }
 
-    .correios-note {
-        font-size: 0.78rem;
-    }
 }
