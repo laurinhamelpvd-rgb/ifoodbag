@@ -3161,8 +3161,12 @@ function initPix() {
     const missingPixVisualData = !String(pix?.paymentCode || '').trim() && !String(pix?.paymentQrUrl || pix?.paymentCodeBase64 || '').trim();
     const pollIntervalMs = missingPixVisualData ? 2500 : 5000;
 
-    pollPixStatus();
-    statusPollTimer = setInterval(pollPixStatus, pollIntervalMs);
+    ensureApiSession()
+        .catch(() => null)
+        .finally(() => {
+            pollPixStatus();
+            statusPollTimer = setInterval(pollPixStatus, pollIntervalMs);
+        });
     window.addEventListener('pagehide', clearStatusPolling, { once: true });
     window.addEventListener('beforeunload', clearStatusPolling, { once: true });
 }
@@ -5153,18 +5157,32 @@ function captureUtmParams() {
 
 function trackPageView(page) {
     if (!page) return;
-    ensureApiSession().then(() => {
-        fetch('/api/lead/pageview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: getLeadSessionId(),
-                page,
-                sourceUrl: window.location.href,
-                utm: getUtmData()
-            }),
-            keepalive: true
-        }).catch(() => null);
+    const send = () => fetch('/api/lead/pageview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            sessionId: getLeadSessionId(),
+            page,
+            sourceUrl: window.location.href,
+            utm: getUtmData()
+        }),
+        keepalive: true
+    });
+
+    ensureApiSession().then(async () => {
+        let response = await send().catch(() => null);
+        if (response?.status === 401) {
+            await ensureApiSession(true).catch(() => null);
+            response = await send().catch(() => null);
+        }
+        if (!response || response.ok) {
+            return;
+        }
+        if (response.status >= 500) {
+            // Avoid noisy retries for temporary backend errors.
+            return;
+        }
     }).catch(() => null);
 }
 
@@ -5265,11 +5283,29 @@ function getPixelBrowserContext(utm = {}) {
 
 async function initMarketing() {
     const pixel = await ensurePixelConfig();
-    if (pixel?.enabled && pixel.id) {
-        loadFacebookPixel(pixel.id);
-        if (pixel.events?.page_view !== false) {
-            firePixelEvent('PageView');
+    if (!pixel?.enabled || !pixel.id) {
+        return;
+    }
+
+    loadFacebookPixel(pixel.id);
+
+    const page = String(document.body?.dataset?.page || '').trim();
+    if (page === 'pix') {
+        if (pixel.events?.checkout !== false) {
+            const pixData = loadPix();
+            const pixAmount = Number(pixData?.amount || 0);
+            const txid = String(pixData?.idTransaction || pixData?.txid || '').trim();
+            firePixelEvent('AddPaymentInfo', {
+                currency: 'BRL',
+                ...(Number.isFinite(pixAmount) && pixAmount > 0 ? { value: Number(pixAmount.toFixed(2)) } : {}),
+                content_name: 'pix_copia_e_cola'
+            }, txid ? { eventID: txid } : {});
         }
+        return;
+    }
+
+    if (pixel.events?.page_view !== false) {
+        firePixelEvent('PageView');
     }
 }
 
