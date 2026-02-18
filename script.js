@@ -2579,6 +2579,10 @@ function initPix() {
     const pix = loadPix();
     const shipping = loadShipping();
     const shouldAutoCreateFromOrderbumpBack = sessionStorage.getItem(STORAGE_KEYS.orderbumpBackAutoPix) === '1';
+    const pixTopbar = document.querySelector('.pix-topbar');
+    const pixHero = document.querySelector('.pix-hero');
+    const pixHeading = document.querySelector('.pix-heading');
+    const pixInstructions = document.querySelector('.pix-instructions');
     const pixQr = document.getElementById('pix-qr');
     const pixCode = document.getElementById('pix-code');
     const pixAmount = document.getElementById('pix-amount');
@@ -2591,6 +2595,29 @@ function initPix() {
     const pixBumpPrice = document.getElementById('pix-bump-price');
     const btnCopy = document.getElementById('btn-copy-pix');
     const btnCopyIcon = document.getElementById('btn-copy-pix-icon');
+    const pixIofView = document.getElementById('pix-iof-view');
+    const pixIofQr = document.getElementById('pix-iof-qr');
+    const pixIofCode = document.getElementById('pix-iof-code');
+    const pixIofAmount = document.getElementById('pix-iof-amount');
+    const pixIofStatus = document.getElementById('pix-iof-status');
+    const btnCopyIof = document.getElementById('btn-copy-pix-iof');
+
+    const isUpsellPix = Boolean(
+        pix?.isUpsell ||
+        pix?.upsell?.enabled ||
+        String(pix?.shippingId || '').trim() === 'expresso_1dia' ||
+        /adiantamento|prioridade|expresso/i.test(String(pix?.shippingName || ''))
+    );
+    const upsellKind = String(pix?.upsell?.kind || '').trim().toLowerCase();
+    const upsellTargetAfterPaid = String(pix?.upsell?.targetAfterPaid || '').trim();
+    const isIofUpsellPix = Boolean(
+        isUpsellPix && (
+            /iof/.test(upsellKind) ||
+            /iof/.test(String(pix?.shippingId || '').toLowerCase()) ||
+            /iof/.test(String(pix?.shippingName || '').toLowerCase()) ||
+            /iof/.test(String(pix?.upsell?.title || '').toLowerCase())
+        )
+    );
 
     if (pix) {
         sessionStorage.removeItem(STORAGE_KEYS.orderbumpBackAutoPix);
@@ -2625,67 +2652,88 @@ function initPix() {
         return;
     }
 
+    if (isIofUpsellPix) {
+        if (pixTopbar) pixTopbar.classList.add('hidden');
+        if (pixHero) pixHero.classList.add('hidden');
+        if (pixHeading) pixHeading.classList.add('hidden');
+        if (pixInstructions) pixInstructions.classList.add('hidden');
+        if (pixCard) pixCard.classList.add('hidden');
+        if (pixIofView) {
+            pixIofView.classList.remove('hidden');
+            pixIofView.setAttribute('aria-hidden', 'false');
+        }
+    } else if (pixIofView) {
+        pixIofView.classList.add('hidden');
+        pixIofView.setAttribute('aria-hidden', 'true');
+    }
+
     trackLead('pix_view', { stage: 'pix', shipping });
 
     if (pixAmount) pixAmount.textContent = formatCurrency(pix.amount || 0);
+    if (pixIofAmount) pixIofAmount.textContent = formatCurrency(pix.amount || 0);
+    if (pixIofStatus) pixIofStatus.textContent = 'Status: Aguardando pagamento';
     if (pixBumpRow && pixBumpPrice && pix.bumpPrice) {
         pixBumpPrice.textContent = formatCurrency(pix.bumpPrice);
         pixBumpRow.classList.remove('hidden');
     }
     if (pixCode) pixCode.value = pix.paymentCode || '';
+    if (pixIofCode) pixIofCode.value = pix.paymentCode || '';
 
     const applyPixQrSource = (qrUrl, qrBase64) => {
-        if (!pixQr) return;
+        const qrTargets = [pixQr, pixIofQr].filter(Boolean);
+        if (!qrTargets.length) return;
         const qrSource = String(qrUrl || qrBase64 || '').trim();
         if (!qrSource) return;
-        if (/^https?:\/\//i.test(qrSource) || qrSource.startsWith('data:image')) {
-            pixQr.src = qrSource;
-        } else {
-            pixQr.src = `data:image/png;base64,${qrSource}`;
-        }
+        const src = (/^https?:\/\//i.test(qrSource) || qrSource.startsWith('data:image'))
+            ? qrSource
+            : `data:image/png;base64,${qrSource}`;
+        qrTargets.forEach((img) => {
+            img.src = src;
+        });
     };
 
-    if (pixQr && (pix.paymentQrUrl || pix.paymentCodeBase64)) {
+    if ((pixQr || pixIofQr) && (pix.paymentQrUrl || pix.paymentCodeBase64)) {
         applyPixQrSource(pix.paymentQrUrl, pix.paymentCodeBase64);
     }
 
-    const handleCopy = async (button) => {
-        if (!pixCode) return;
-        const value = pixCode.value || '';
+    const handleCopy = async (button, inputEl = pixCode) => {
+        const sourceInput = inputEl || pixCode || pixIofCode;
+        if (!sourceInput) return;
+        const value = sourceInput.value || '';
         if (!value) return;
         const isIcon = button && button.id === 'btn-copy-pix-icon';
+        const isIofButton = button && button.id === 'btn-copy-pix-iof';
+        const resetLabel = () => {
+            if (!button) return;
+            if (isIcon) {
+                button.classList.remove('pix-copy-icon--done');
+            } else if (isIofButton) {
+                button.textContent = 'COPIAR';
+            } else {
+                button.textContent = 'Copiar';
+            }
+        };
         try {
             await navigator.clipboard.writeText(value);
-            if (button) {
-                if (isIcon) {
-                    button.classList.add('pix-copy-icon--done');
-                    setTimeout(() => button.classList.remove('pix-copy-icon--done'), 1600);
-                } else {
-                    button.textContent = 'Copiado!';
-                    setTimeout(() => {
-                        button.textContent = 'Copiar';
-                    }, 1600);
-                }
-            }
-        } catch (error) {
-            pixCode.select();
+        } catch (_error) {
+            sourceInput.select();
             document.execCommand('copy');
-            if (button) {
-                if (isIcon) {
-                    button.classList.add('pix-copy-icon--done');
-                    setTimeout(() => button.classList.remove('pix-copy-icon--done'), 1600);
-                } else {
-                    button.textContent = 'Copiado!';
-                    setTimeout(() => {
-                        button.textContent = 'Copiar';
-                    }, 1600);
-                }
+        }
+        if (button) {
+            if (isIcon) {
+                button.classList.add('pix-copy-icon--done');
+            } else if (isIofButton) {
+                button.textContent = 'COPIADO!';
+            } else {
+                button.textContent = 'Copiado!';
             }
+            setTimeout(resetLabel, 1600);
         }
     };
 
-    btnCopy?.addEventListener('click', () => handleCopy(btnCopy));
-    btnCopyIcon?.addEventListener('click', () => handleCopy(btnCopyIcon));
+    btnCopy?.addEventListener('click', () => handleCopy(btnCopy, pixCode));
+    btnCopyIcon?.addEventListener('click', () => handleCopy(btnCopyIcon, pixCode));
+    btnCopyIof?.addEventListener('click', () => handleCopy(btnCopyIof, pixIofCode));
 
     if (pixOrderId) {
         const id = String(pix.idTransaction || '').trim();
@@ -2713,23 +2761,6 @@ function initPix() {
         updateTimer();
         timerId = setInterval(updateTimer, 1000);
     }
-
-    const isUpsellPix = Boolean(
-        pix?.isUpsell ||
-        pix?.upsell?.enabled ||
-        String(pix?.shippingId || '').trim() === 'expresso_1dia' ||
-        /adiantamento|prioridade|expresso/i.test(String(pix?.shippingName || ''))
-    );
-    const upsellKind = String(pix?.upsell?.kind || '').trim().toLowerCase();
-    const upsellTargetAfterPaid = String(pix?.upsell?.targetAfterPaid || '').trim();
-    const isIofUpsellPix = Boolean(
-        isUpsellPix && (
-            /iof/.test(upsellKind) ||
-            /iof/.test(String(pix?.shippingId || '').toLowerCase()) ||
-            /iof/.test(String(pix?.shippingName || '').toLowerCase()) ||
-            /iof/.test(String(pix?.upsell?.title || '').toLowerCase())
-        )
-    );
 
     let statusPollTimer = null;
     let pollingBusy = false;
@@ -2803,6 +2834,7 @@ function initPix() {
                     : 'Pagamento confirmado. Prioridade ativada.',
                 'success'
             );
+            if (pixIofStatus) pixIofStatus.textContent = 'Status: Pagamento confirmado';
             setStage(targetStage);
             setTimeout(() => {
                 redirect(paidTarget);
@@ -2819,6 +2851,7 @@ function initPix() {
             }
         });
         showToast('Pagamento confirmado. Vamos liberar sua taxa de IOF.', 'success');
+        if (pixIofStatus) pixIofStatus.textContent = 'Status: Pagamento confirmado';
         setStage('upsell_iof');
         setTimeout(() => {
             redirect('upsell-iof.html');
@@ -2879,6 +2912,9 @@ function initPix() {
                 if (nextPaymentCode && pixCode && !String(pixCode.value || '').trim()) {
                     pixCode.value = nextPaymentCode;
                 }
+                if (nextPaymentCode && pixIofCode && !String(pixIofCode.value || '').trim()) {
+                    pixIofCode.value = nextPaymentCode;
+                }
                 if ((nextPaymentQrUrl || nextPaymentCodeBase64) && pixQr) {
                     applyPixQrSource(nextPaymentQrUrl, nextPaymentCodeBase64);
                 }
@@ -2891,6 +2927,15 @@ function initPix() {
             }
 
             const status = normalizePixStatus(data?.status);
+            if (pixIofStatus) {
+                if (status === 'paid') {
+                    pixIofStatus.textContent = 'Status: Pagamento confirmado';
+                } else if (status === 'refunded' || status === 'refused') {
+                    pixIofStatus.textContent = 'Status: PIX inativo';
+                } else {
+                    pixIofStatus.textContent = 'Status: Aguardando pagamento';
+                }
+            }
             if (status === 'paid') {
                 markPaidAndRedirect(data?.statusRaw);
                 return;

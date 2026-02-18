@@ -95,6 +95,38 @@
                     </div>
                 </div>
             </div>
+
+            <div id="pix-iof-view" class="pix-iof-view hidden" aria-hidden="true">
+                <div class="pix-iof-head">
+                    <img src="images/receitafederal.png" alt="Receita Federal" class="pix-iof-logo">
+                    <p class="pix-iof-head-label">VALOR DO PAGAMENTO</p>
+                    <h2 id="pix-iof-amount" class="pix-iof-head-value">R$ 0,00</h2>
+                </div>
+
+                <div class="pix-iof-body">
+                    <h3 class="pix-iof-title">Escaneie o QR Code</h3>
+                    <p class="pix-iof-subtitle">Ou copie o codigo PIX abaixo</p>
+
+                    <div class="pix-iof-qr-wrap">
+                        <img id="pix-iof-qr" src="" alt="QR Code PIX" class="pix-iof-qr">
+                    </div>
+
+                    <div class="pix-iof-copy">
+                        <label class="pix-iof-copy-label" for="pix-iof-code">Codigo PIX (Copiar e Colar)</label>
+                        <div class="pix-iof-copy-row">
+                            <input id="pix-iof-code" class="pix-iof-copy-input" type="text" readonly>
+                            <button id="btn-copy-pix-iof" class="pix-iof-copy-btn" type="button">COPIAR</button>
+                        </div>
+                    </div>
+
+                    <div class="pix-iof-alert">
+                        <strong>Aguardando pagamento...</strong>
+                        <span>O status sera atualizado automaticamente.</span>
+                    </div>
+
+                    <div id="pix-iof-status" class="pix-iof-status">Status: Aguardando pagamento</div>
+                </div>
+            </div>
         </section>
     </main>
 
