@@ -56,6 +56,25 @@
             return /paid|approved|confirm|completed|success|conclu|aprov/.test(status);
         };
 
+        var resolvePaidPixTarget = function (pix) {
+            if (!pix || typeof pix !== 'object' || !isPixPaidStatus(pix)) return '';
+            var explicitTarget = String(pix.upsell && pix.upsell.targetAfterPaid ? pix.upsell.targetAfterPaid : '').trim();
+            if (explicitTarget) return explicitTarget;
+
+            var isUpsellPix = !!(pix.isUpsell || (pix.upsell && pix.upsell.enabled));
+            if (!isUpsellPix) return '/upsell-iof';
+
+            var kind = String((pix.upsell && pix.upsell.kind) || '').toLowerCase();
+            var hints = [
+                String(pix.shippingId || '').toLowerCase(),
+                String(pix.shippingName || '').toLowerCase(),
+                String((pix.upsell && pix.upsell.title) || '').toLowerCase()
+            ].join(' ');
+            if (/iof/.test(kind) || /iof/.test(hints)) return '/upsell';
+
+            return '/upsell?paid=1';
+        };
+
         var resolveEarlyBackTarget = function () {
             try {
                 if (typeof window.__ifbResolveBackRedirect === 'function') {
@@ -89,7 +108,7 @@
 
                 if (!vslCompleted && hasPersonal && address) return '/processando';
                 if (pixPending) return '/pix';
-                if (pixPaid) return '/upsell';
+                if (pixPaid) return resolvePaidPixTarget(pix) || '/upsell-iof';
                 if (onOrderbump && isShippingSelectionComplete(shipping)) {
                     try {
                         var coupon = parseStorageJson('ifoodbag.coupon') || null;

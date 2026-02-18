@@ -1131,12 +1131,53 @@ body[data-page='orderbump'] .step {
     transform: rotate(-45deg);
 }
 
-body[data-page='upsell'] .step {
+.upsell-iof-step {
+    gap: 10px;
+}
+
+.upsell-iof-hero {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid #efefef;
+    background: linear-gradient(180deg, #fff7f8 0%, #ffffff 100%);
+    padding: 8px;
+}
+
+.upsell-iof-hero__img {
+    width: 100%;
+    max-height: 280px;
+    object-fit: contain;
+}
+
+.upsell-iof-urgency {
+    border-color: #ffc7cc;
+}
+
+.upsell-iof-summary {
+    border-color: #f2d8db;
+}
+
+.upsell-iof-summary .upsell-summary__row--highlight strong {
+    color: #cc1f2f;
+}
+
+.upsell-iof-explain {
+    border-color: #f2d8db;
+    background: linear-gradient(180deg, #fffafb 0%, #ffffff 100%);
+}
+
+.upsell-iof-explain strong {
+    color: #c9172a;
+}
+
+body[data-page='upsell'] .step,
+body[data-page='upsell-iof'] .step {
     gap: 12px;
     padding: 14px 12px 16px;
 }
 
-body[data-page='upsell'] .action-stack {
+body[data-page='upsell'] .action-stack,
+body[data-page='upsell-iof'] .action-stack {
     margin-top: 0;
 }
 
@@ -3672,7 +3713,8 @@ body.modal-open {
 }
 
 @media (max-width: 640px) {
-    body[data-page='upsell'] .step {
+    body[data-page='upsell'] .step,
+    body[data-page='upsell-iof'] .step {
         padding: 12px 10px 14px;
         gap: 8px;
     }
