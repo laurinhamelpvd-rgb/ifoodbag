@@ -791,7 +791,7 @@ module.exports = async (req, res) => {
                 eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
                 dedupeKey: reusableTxid ? `utmfy:pix_created:${gateway}:${upsellEnabled ? 'upsell' : 'base'}:${reusableTxid}` : null,
                 payload: {
-                    orderId: orderId,
+                    orderId: reusableTxid || orderId,
                     amount: Number(reusable.amount || totalAmount || 0),
                     sessionId: rawBody.sessionId || '',
                     personal,
@@ -1203,7 +1203,7 @@ module.exports = async (req, res) => {
             } : null
             }, req).catch(() => null);
 
-            const utmOrderId = orderId;
+            const utmOrderId = txid || orderId;
             const utmJob = {
                 channel: 'utmfy',
                 eventName: upsellEnabled ? 'upsell_pix_created' : 'pix_created',

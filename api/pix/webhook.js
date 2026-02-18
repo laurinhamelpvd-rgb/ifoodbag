@@ -817,7 +817,7 @@ module.exports = async (req, res) => {
             : isRefused
                 ? 'pix_failed'
                 : (upsellEvent ? 'upsell_pix_created' : 'pix_created');
-    const dedupeBase = orderId || effectiveTxid || 'unknown';
+    const dedupeBase = effectiveTxid || orderId || 'unknown';
     const isTerminalUpdate = Boolean(isPaid || isRefunded || isRefused);
     const shouldSendUtmStatus =
         Boolean(orderId || effectiveTxid) &&
@@ -829,7 +829,7 @@ module.exports = async (req, res) => {
     if (shouldSendUtmStatus) {
         const utmPayload = {
             event: 'pix_status',
-            orderId: orderId || effectiveTxid,
+            orderId: effectiveTxid || orderId,
             txid: effectiveTxid,
             gateway,
             status: utmifyStatus,

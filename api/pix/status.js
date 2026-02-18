@@ -684,7 +684,7 @@ module.exports = async (req, res) => {
             txid ||
             ''
         ).trim();
-        const dedupeBase = orderId || txid || 'unknown';
+        const dedupeBase = txid || orderId || 'unknown';
         let gatewayFee = 0;
         if (gateway === 'ghostspay') {
             gatewayFee = normalizeMoneyToBrl(
@@ -719,7 +719,7 @@ module.exports = async (req, res) => {
 
         const utmPayload = {
             event: 'pix_status',
-            orderId: orderId || txid,
+            orderId: txid || orderId,
             txid,
             gateway,
             status: utmifyStatus,
