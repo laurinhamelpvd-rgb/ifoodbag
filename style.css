@@ -1224,7 +1224,9 @@ body[data-page='upsell-correios'] .step {
 }
 
 .correios-hero-banner {
-    margin: 0 0 12px;
+    width: 92%;
+    max-width: 560px;
+    margin: 0 auto 12px;
     border-radius: 16px;
     overflow: hidden;
     border: 1px solid #d0d8e3;
@@ -4416,7 +4418,8 @@ body.modal-open {
     }
 
     .correios-hero-banner {
-        margin-bottom: 10px;
+        width: 94%;
+        margin: 0 auto 10px;
         border-radius: 12px;
     }
 
