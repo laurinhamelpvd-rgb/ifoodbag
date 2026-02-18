@@ -2300,11 +2300,18 @@ function initUpsellIof() {
     const leadName = document.getElementById('upsell-iof-lead-name');
     const currentFrete = document.getElementById('upsell-iof-current-frete');
     const currentTxid = document.getElementById('upsell-iof-current-txid');
-    const btnAccept = document.getElementById('btn-upsell-iof-accept');
+    const btnAccept = document.getElementById('btn-upsell-iof-accept') || document.getElementById('confirmation-button');
     const btnSkip = document.getElementById('btn-upsell-iof-skip');
-    const loading = document.getElementById('upsell-iof-loading');
+    const loading = document.getElementById('upsell-iof-loading') || document.getElementById('pixLoading');
     const timerLabel = document.getElementById('upsell-iof-timer');
-    const iofPriceLabel = document.getElementById('upsell-iof-price');
+    const iofPriceLabels = Array.from(
+        new Set([
+            ...Array.from(document.querySelectorAll('#upsell-iof-price')),
+            ...Array.from(document.querySelectorAll('#price'))
+        ])
+    );
+    const acceptIdleLabel = btnAccept?.textContent || 'Pagar taxa de IOF de R$ 11,73';
+    let submitInFlight = false;
 
     if (leadName && personal?.name) {
         const firstName = String(personal.name || '').trim().split(/\s+/)[0];
@@ -2317,9 +2324,10 @@ function initUpsellIof() {
         const txid = String(pix?.idTransaction || '').trim();
         currentTxid.textContent = txid ? txid.slice(-8) : '--';
     }
-    if (iofPriceLabel) {
-        iofPriceLabel.textContent = formatCurrency(offerPrice);
-    }
+    iofPriceLabels.forEach((el) => {
+        if (!el) return;
+        el.textContent = formatCurrency(offerPrice);
+    });
 
     const setLoading = (active) => {
         if (btnAccept) btnAccept.disabled = active;
@@ -2357,9 +2365,11 @@ function initUpsellIof() {
         redirect('upsell.html');
     };
 
-    startCountdown();
+    const handleAccept = async (event) => {
+        event?.preventDefault?.();
+        if (submitInFlight) return false;
+        submitInFlight = true;
 
-    btnAccept?.addEventListener('click', async () => {
         const iofShipping = {
             id: 'taxa_iof_bag',
             name: 'Taxa regulatoria IOF da BAG',
@@ -2377,7 +2387,7 @@ function initUpsellIof() {
         });
 
         try {
-            btnAccept.textContent = 'Gerando PIX da taxa de IOF...';
+            if (btnAccept) btnAccept.textContent = 'Gerando PIX da taxa de IOF...';
             await createPixCharge(iofShipping, 0, {
                 sourceStage: 'upsell_iof',
                 upsell: {
@@ -2390,11 +2400,23 @@ function initUpsellIof() {
                 }
             });
         } catch (error) {
-            btnAccept.textContent = 'Pagar taxa de IOF de R$ 11,73';
+            if (btnAccept) btnAccept.textContent = acceptIdleLabel;
             showToast(error.message || 'Nao foi possivel gerar o PIX da taxa de IOF.', 'error');
             setLoading(false);
+            submitInFlight = false;
+            return false;
         }
-    });
+
+        return false;
+    };
+
+    startCountdown();
+
+    if (btnAccept) {
+        btnAccept.removeAttribute('onclick');
+        btnAccept.addEventListener('click', handleAccept);
+    }
+    window.initiateCheckout = handleAccept;
 
     btnSkip?.addEventListener('click', () => {
         trackLead('upsell_iof_decline', { stage: 'upsell_iof', shipping, pix, amount: offerPrice });
