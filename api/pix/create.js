@@ -1165,42 +1165,49 @@ module.exports = async (req, res) => {
             const pixCreatedAt = new Date().toISOString();
 
             await upsertLead({
-            ...(rawBody || {}),
-            shipping: normalizedShipping,
-            bump: normalizedBump,
-            gateway,
-            pixGateway: gateway,
-            paymentGateway: gateway,
-            event: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
-            stage: upsellEnabled ? 'upsell' : 'pix',
-            pixTxid: txid,
-            pixAmount: totalAmount,
-            pixCreatedAt,
-            pixStatusChangedAt: pixCreatedAt,
-            pixStatus: statusRaw || 'waiting_payment',
-            pixExternalId: externalId || undefined,
-            paymentCode: paymentCode || undefined,
-            paymentCodeBase64: paymentCodeBase64 || undefined,
-            paymentQrUrl: paymentQrUrl || undefined,
-            pix: {
-                ...asObject(rawBody?.pix),
-                idTransaction: txid,
-                paymentCode,
-                paymentCodeBase64,
-                paymentQrUrl,
-                status: statusRaw || 'waiting_payment',
+                ...(rawBody || {}),
+                shipping: normalizedShipping,
+                bump: normalizedBump,
                 gateway,
-                amount: totalAmount,
-                createdAt: pixCreatedAt,
-                externalId: externalId || undefined
-            },
-            upsell: upsellEnabled ? {
-                enabled: true,
-                kind: String(upsell?.kind || 'frete_1dia'),
-                title: String(upsell?.title || 'Prioridade de envio'),
-                price: Number(upsell?.price || totalAmount),
-                previousTxid: String(upsell?.previousTxid || '')
-            } : null
+                pixGateway: gateway,
+                paymentGateway: gateway,
+                event: upsellEnabled ? 'upsell_pix_created' : 'pix_created',
+                stage: upsellEnabled ? 'upsell' : 'pix',
+                pixTxid: txid,
+                pixAmount: totalAmount,
+                pixCreatedAt,
+                pixStatusChangedAt: pixCreatedAt,
+                pixStatus: statusRaw || 'waiting_payment',
+                // A new PIX must clear terminal markers from any previous transaction in the same session.
+                pixPaidAt: null,
+                pixRefundedAt: null,
+                pixRefusedAt: null,
+                pixExternalId: externalId || undefined,
+                paymentCode: paymentCode || undefined,
+                paymentCodeBase64: paymentCodeBase64 || undefined,
+                paymentQrUrl: paymentQrUrl || undefined,
+                pix: {
+                    ...asObject(rawBody?.pix),
+                    idTransaction: txid,
+                    paymentCode,
+                    paymentCodeBase64,
+                    paymentQrUrl,
+                    status: statusRaw || 'waiting_payment',
+                    gateway,
+                    amount: totalAmount,
+                    createdAt: pixCreatedAt,
+                    paidAt: null,
+                    refundedAt: null,
+                    refusedAt: null,
+                    externalId: externalId || undefined
+                },
+                upsell: upsellEnabled ? {
+                    enabled: true,
+                    kind: String(upsell?.kind || 'frete_1dia'),
+                    title: String(upsell?.title || 'Prioridade de envio'),
+                    price: Number(upsell?.price || totalAmount),
+                    previousTxid: String(upsell?.previousTxid || '')
+                } : null
             }, req).catch(() => null);
 
             const utmOrderId = txid || orderId;

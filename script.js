@@ -3156,8 +3156,7 @@ function initPix() {
         }
     };
 
-    const currentStatus = normalizePixStatus(pix?.status || pix?.status_transaction || '');
-    if (currentStatus === 'paid' || pix?.paidAt) {
+    if (pix?.paidAt) {
         markPaidAndRedirect(pix?.statusRaw || pix?.status || 'paid');
         return;
     }

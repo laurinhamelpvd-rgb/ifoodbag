@@ -255,19 +255,27 @@ function mapGatewayStatusToFrontend(gateway, statusRaw) {
     return mapUtmifyStatusToFrontend(mapAtivusStatusToUtmify(statusRaw));
 }
 
-function deriveLeadStatus(leadData) {
+function deriveLeadStatus(leadData, expectedTxid = '') {
     if (!leadData) return { status: 'waiting_payment', statusRaw: '', gateway: 'ativushub' };
     const payload = asObject(leadData.payload);
     const lastEvent = String(leadData.last_event || '').trim().toLowerCase();
     const gateway = resolveGatewayFromPayload(payload, 'ativushub');
+    const requestedTxid = String(expectedTxid || '').trim();
+    const payloadTxid = pickText(
+        leadData?.pix_txid,
+        payload?.pixTxid,
+        payload?.pix?.idTransaction,
+        payload?.pix?.txid
+    );
+    const txidMatches = !requestedTxid || !payloadTxid || requestedTxid === payloadTxid;
 
-    if (lastEvent === 'pix_confirmed' || payload.pixPaidAt) {
+    if (txidMatches && (lastEvent === 'pix_confirmed' || payload.pixPaidAt)) {
         return { status: 'paid', statusRaw: String(payload.pixStatus || 'paid'), gateway };
     }
-    if (lastEvent === 'pix_refunded' || payload.pixRefundedAt) {
+    if (txidMatches && (lastEvent === 'pix_refunded' || payload.pixRefundedAt)) {
         return { status: 'refunded', statusRaw: String(payload.pixStatus || 'refunded'), gateway };
     }
-    if (lastEvent === 'pix_refused' || payload.pixRefusedAt) {
+    if (txidMatches && (lastEvent === 'pix_refused' || payload.pixRefusedAt)) {
         return { status: 'refused', statusRaw: String(payload.pixStatus || 'refused'), gateway };
     }
     const statusRaw = String(payload.pixStatus || payload.status || '');
@@ -404,7 +412,7 @@ module.exports = async (req, res) => {
     }
 
     const payments = await getPaymentsConfig();
-    const leadStatus = deriveLeadStatus(leadData);
+    const leadStatus = deriveLeadStatus(leadData, txid);
     const gateway = resolveStatusGateway(body, leadData, payments);
     const gatewayConfig = payments?.gateways?.[gateway] || {};
     const statusGatewayConfig = {
