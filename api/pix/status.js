@@ -267,7 +267,9 @@ function deriveLeadStatus(leadData, expectedTxid = '') {
         payload?.pix?.idTransaction,
         payload?.pix?.txid
     );
-    const txidMatches = !requestedTxid || !payloadTxid || requestedTxid === payloadTxid;
+    const txidMatches = !requestedTxid
+        ? true
+        : Boolean(payloadTxid) && requestedTxid === payloadTxid;
 
     if (txidMatches && (lastEvent === 'pix_confirmed' || payload.pixPaidAt)) {
         return { status: 'paid', statusRaw: String(payload.pixStatus || 'paid'), gateway };
@@ -277,6 +279,9 @@ function deriveLeadStatus(leadData, expectedTxid = '') {
     }
     if (txidMatches && (lastEvent === 'pix_refused' || payload.pixRefusedAt)) {
         return { status: 'refused', statusRaw: String(payload.pixStatus || 'refused'), gateway };
+    }
+    if (!txidMatches) {
+        return { status: 'waiting_payment', statusRaw: '', gateway };
     }
     const statusRaw = String(payload.pixStatus || payload.status || '');
     const mapped = mapGatewayStatusToFrontend(gateway, statusRaw);
